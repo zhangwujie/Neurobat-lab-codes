@@ -4,9 +4,9 @@
 % 7/9/2016, Wujie Zhang
 % Beta testing version. Do not use this to seriously process data.
 %%
-voltage_trace_data_folder='C:\Users\phyllo\Documents\Maimon\ephys\yr2016_bat71319_robin_Nlg\neurologger_recording20160711\nlxformat_wujie\';
-output_folder='C:\Users\phyllo\Documents\Maimon\ephys\Data_processed\yr2016_bat71319_robin_Nlg\20160711_wujie\';
-output_spike_file_name_prefix='';
+voltage_trace_data_folder='C:\Users\phyllo\Documents\Maimon\ephys\yr2016_bat71319_robin_Nlg\neurologger_recording20160718\nlxformat\';
+output_folder='C:\Users\phyllo\Documents\Maimon\ephys\Data_processed\yr2016_bat71319_robin_Nlg\20160718\';
+output_spike_file_name_prefix='20160718';
 
 filter_cutoff_frequencies=[600 6000];
 
@@ -40,6 +40,9 @@ else
 end
 
 first_file_loaded=1;
+if ~exist(output_folder,'dir');
+    mkdir(output_folder);
+end
 for electrode_bundle_i=1:num_electrode_bundle
     active_channels_on_current_bundle=intersect(active_channels,(electrode_bundle_i-1)*channels_per_electrode_bundle+1:electrode_bundle_i*channels_per_electrode_bundle);
     if isempty(active_channels_on_current_bundle)

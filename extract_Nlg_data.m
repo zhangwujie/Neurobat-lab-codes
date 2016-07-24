@@ -17,13 +17,13 @@
 
 %%
 % Input and ouput paths, options, and paramters
-Nlg_folder='D:\Wujie\Data\Maimon data\yr2016_bat60091_garfunkle_Nlg\neurologger_recording20160309\nlgformat\nlg1\'; % the folder where the Nlg voltage data files and event file are stored
+Nlg_folder='D:\Wujie\Analysis\19 Debugging and testing Nlg2Nlx code, 160629\no_stop_recording\'; % the folder where the Nlg voltage data files and event file are stored
 output_folder='D:\Wujie\Analysis\19 Debugging and testing Nlg2Nlx code, 160629\test exports and imports\'; % the folder where the outputs of the code (voltage and event data in MATLAB or Nlx formats) will be saved
 
 save_in_mat_or_Nlx_format=1; % 1: save in .mat format; 2: save in Nlx .nev and .ncs formats
-save_event_file=1; % 0: don't save any event file; 1: save one event file containing all events; 2: save one event file containing all events and one event file for each event type
+save_event_file=0; % 0: don't save any event file; 1: save one event file containing all events; 2: save one event file containing all events and one event file for each event type
 save_voltage_AD_count_files=1; % 0: don't save voltage data files; 1: save
-save_options_and_parameters=1; % 0: don't save options and paramters in a .mat file ; 1: save
+save_options_and_parameters=0; % 0: don't save options and paramters in a .mat file ; 1: save
 
 inactive_channels=[]; % a vector containing numbers between 1 and the number of channels, indicating the disabled channels; enter an empty vector if all channels are active
 reference_channel=[]; % a number between 1 and the number of channels, indicating a reference channel whose AD counts (equivalently, voltages) will be subtracted from those of all other channels during the processing here; enter an empty vector to not subtract any reference channel here
@@ -214,6 +214,7 @@ if save_voltage_AD_count_files
         current_stop_recording_index=indices_stop_recording_events(stop_recording_i);
         find_partially_filled_Nlg_files(stop_recording_i)=max(indices_file_start_events(indices_file_start_events<current_stop_recording_index)); % the last "File started" event before the "Stopped recording" event
     end
+    find_partially_filled_Nlg_files=[find_partially_filled_Nlg_files; indices_file_start_events(end)]; % add in the last .DAT file, because if the battery runs out or the logger is turned off before the "stop recording" button is pressed, this last file is not followed by a "Stopped recording" event
     find_partially_filled_Nlg_files=unique(find_partially_filled_Nlg_files); % find unique indices, because the "Stopped recording" event sometimes happen twice in a row without any recording in-between
     found_event_strings=cell2mat(event_types_and_details(find_partially_filled_Nlg_files)); % these are eg. "File started. File index: 000"
     partially_filled_Nlg_files=find(ismember(file_start_details,found_event_strings)); % the indices of the partially filled files; note these indices start from 1, so that 1 is Nlg .DAT file 000, 2 is Nlg .DAT file 001, etc.

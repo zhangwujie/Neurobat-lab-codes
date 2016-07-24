@@ -15,7 +15,7 @@ filter_cutoff_frequencies=[600 6000]; % the lower and upper cut-off frequencies 
 
 % Potential spikes are detected as the filtered voltage trace crosses above a threshold
 hard_or_adaptive_spike_threshold=2; % 1: manually set a threshold for all channels; 2: adaptively set a threshold as a multiple of the estimated standard deviation of the noise in the voltage trace
-hard_spike_threshold=60; % use this threshold (in uV), if hard_or_adaptive_spike_threshold is 1
+hard_spike_threshold=[60 60 60 60]; % the threshold(s) in uV, if hard_or_adaptive_spike_threshold is 1; can either enter one number, which will be used as the threshold for all channels, or a vector with one threshold for each electrode bundle
 adaptive_spike_threshold_factor=3; % the threshold is this number times the estimated noise standard deviation, if hard_or_adaptive_spike_threshold is 2; Rey et al. (2015, Brain Res Bull) recommends 3 to 5
 plot_voltage_traces_with_threshold=0; % whether or not to plot some of the filtered voltage traces with the spike threshold
 
@@ -78,8 +78,12 @@ for electrode_bundle_i=1:num_electrode_bundle % for each of the electrode bundle
     clear AD_count_int16 voltage_trace
     
     % Detect spikes as threshold-crossing by the filtered voltage traces
-    if hard_or_adaptive_spike_threshold==1 % using the manually-set hard threshold
-        spike_thresholds=hard_spike_threshold*ones(num_channels_on_current_bundle,1);
+    if hard_or_adaptive_spike_threshold==1 % using the manually-set hard threshold(s)
+        if length(hard_spike_threshold)==1
+            spike_thresholds=hard_spike_threshold*ones(num_channels_on_current_bundle,1);
+        elseif length(hard_spike_threshold)==num_electrode_bundle
+            spike_thresholds=hard_spike_threshold(electrode_bundle_i)*ones(num_channels_on_current_bundle,1);
+        end
     elseif hard_or_adaptive_spike_threshold==2 % automatically calculate a threshold (from Quian Quiroga et al., 2004, Neural Computation)
         estimate_of_voltage_noise_std=median(abs(filtered_voltage_traces),2)/icdf('Normal',0.75,0,1);
         % Assume the fluctuations of the filtered voltage during

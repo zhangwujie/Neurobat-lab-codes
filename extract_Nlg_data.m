@@ -17,8 +17,8 @@
 
 %%
 % Input and ouput paths, options, and paramters
-Nlg_folders={'D:\Wujie\Analysis\19 Debugging and testing Nlg2Nlx code, 160629\no_stop_recording\'}; % each cell is a folder where Nlg voltage data files and event file are stored
-output_folders_for_each_Nlg_folder={'D:\Wujie\Analysis\19 Debugging and testing Nlg2Nlx code, 160629\test exports and imports\'}; % each cell is a folder where the outputs of the code (voltage and event data in MATLAB or Nlx formats) will be saved, corresponding to one of the folders in Nlg_folders
+Nlg_folders={'C:\Users\phyllo\Documents\Maimon\ephys\yr2016_bat71319_robin_Nlg\neurologger_recording20160724\nlgformat\','C:\Users\phyllo\Documents\Maimon\ephys\yr2016_bat71319_robin_Nlg\neurologger_recording20160725\nlgformat\'}; % each cell is a folder where Nlg voltage data files and event file are stored
+output_folders_for_each_Nlg_folder={'C:\Users\phyllo\Documents\Maimon\ephys\yr2016_bat71319_robin_Nlg\neurologger_recording20160724\nlxformat\','C:\Users\phyllo\Documents\Maimon\ephys\yr2016_bat71319_robin_Nlg\neurologger_recording20160725\nlxformat\'}; % each cell is a folder where the outputs of the code (voltage and event data in MATLAB or Nlx formats) will be saved, corresponding to one of the folders in Nlg_folders
 
 inactive_channels_for_each_Nlg_folder={[]}; % each cell is a vector containing numbers between 1 and the number of channels, indicating the disabled channels; enter an empty vector if all channels are active; each cell corresponds to one of the folders in Nlg_folders
 reference_channel_for_each_Nlg_folder={[]}; % each cell is a number between 1 and the number of channels, indicating a reference channel whose AD counts (equivalently, voltages) will be subtracted from those of all other channels during the processing here; enter an empty vector to not subtract any reference channel here; each cell corresponds to one of the folders in Nlg_folders
@@ -59,6 +59,9 @@ old_clock_difference_bug_correction=0; % if processing data recorded when the Nl
 for Nlg_folder_i=1:length(Nlg_folders) % for each of the Nlg folders
     Nlg_folder=Nlg_folders{Nlg_folder_i};
     output_folder=output_folders_for_each_Nlg_folder{Nlg_folder_i};
+    if ~exist(output_folder,'dir'); % make the output folder if it doesn't already exist
+        mkdir(output_folder);
+    end
     inactive_channels=inactive_channels_for_each_Nlg_folder{Nlg_folder_i};
     reference_channel=reference_channel_for_each_Nlg_folder{Nlg_folder_i};
     disp(['Processing the Nlg data in "' Nlg_folder '"...'])
@@ -154,9 +157,6 @@ for Nlg_folder_i=1:length(Nlg_folders) % for each of the Nlg folders
     %%
     % save event files in either MATLAB or Nlx format
     if save_event_file
-        if ~exist(output_folder,'dir'); % make the output folder if it doesn't already exist
-            mkdir(output_folder);
-        end
         if save_in_mat_or_Nlx_format==1 % if saving in MATLAB format
             file_name_to_save=fullfile(output_folder,'EVENTS.mat');
             save(file_name_to_save,'event_timestamps_usec','event_types_and_details')
@@ -204,9 +204,6 @@ for Nlg_folder_i=1:length(Nlg_folders) % for each of the Nlg folders
     %%
     % Save the AD counts (in bits) encoding the raw voltage traces
     if save_voltage_AD_count_files
-        if ~exist(output_folder,'dir'); % make the output folder if it doesn't already exist
-            mkdir(output_folder);
-        end
         indices_missing_Nlg_files=[];
         ADC_sampling_period_usec=(sampling_period_sec*1e6)/num_channels; % the Nlg AD converter samples each channel sequentially, so its sampling period is the sampling period of a single channel divided by the number of channels
         active_channels=1:num_channels;

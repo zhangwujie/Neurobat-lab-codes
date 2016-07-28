@@ -13,33 +13,32 @@
 % -Before running, need to convert the Neurologger .NLE event file to .xlsx
 % format
 % 7/2/2016, Wujie Zhang
-% Last updated, 7/25/2016, Wujie Zhang
-
+last_code_update='7/28/2016, Wujie Zhang'; % identifies the version of the code
 %%
 % Input and ouput paths, options, and paramters
-Nlg_folders={'C:\Users\phyllo\Documents\Maimon\ephys\yr2016_bat71319_robin_Nlg\neurologger_recording20160724\nlgformat\','C:\Users\phyllo\Documents\Maimon\ephys\yr2016_bat71319_robin_Nlg\neurologger_recording20160725\nlgformat\'}; % each cell is a folder where Nlg voltage data files and event file are stored
-output_folders_for_each_Nlg_folder={'C:\Users\phyllo\Documents\Maimon\ephys\yr2016_bat71319_robin_Nlg\neurologger_recording20160724\nlxformat\','C:\Users\phyllo\Documents\Maimon\ephys\yr2016_bat71319_robin_Nlg\neurologger_recording20160725\nlxformat\'}; % each cell is a folder where the outputs of the code (voltage and event data in MATLAB or Nlx formats) will be saved, corresponding to one of the folders in Nlg_folders
+Nlg_folders={'F:\Wujie\Data\yr2016_bat71319_robin\72716\nlgformat\'}; % each cell is a folder where Nlg voltage data files and event file are stored
+output_folders_for_each_Nlg_folder={'F:\Wujie\Data\yr2016_bat71319_robin\72716\nlxformat\'}; % each cell is a folder where the outputs of the code (voltage and event data in MATLAB or Nlx formats) will be saved, corresponding to one of the folders in Nlg_folders
 
 inactive_channels_for_each_Nlg_folder={[]}; % each cell is a vector containing numbers between 1 and the number of channels, indicating the disabled channels; enter an empty vector if all channels are active; each cell corresponds to one of the folders in Nlg_folders
 reference_channel_for_each_Nlg_folder={[]}; % each cell is a number between 1 and the number of channels, indicating a reference channel whose AD counts (equivalently, voltages) will be subtracted from those of all other channels during the processing here; enter an empty vector to not subtract any reference channel here; each cell corresponds to one of the folders in Nlg_folders
 
 save_in_mat_or_Nlx_format=1; % 1: save in .mat format; 2: save in Nlx .nev and .ncs formats
-save_event_file=0; % 0: don't save any event file; 1: save one event file containing all events; 2: save one event file containing all events and one event file for each event type
-save_voltage_AD_count_files=0; % 0: don't save voltage data files; 1: save
+save_event_file=1; % 0: don't save any event file; 1: save one event file containing all events; 2: save one event file containing all events and one event file for each event type
+save_voltage_AD_count_files=1; % 0: don't save voltage data files; 1: save
 save_options_parameters_CD_figure=1; % 1: save the options and paramters for the current run of the code in a .mat file, and the figure showing the clock difference correction; 0: don't save
 %%
 % Parameters specific to the Neurologger used
 Nlg_file_name_letters='NEUR'; % the first four letters of the Nlg .DAT file names; eg. 'NEUR' for file names like "NEUR_003.DAT"
 num_channels=16; % total number of recording channels, including inactive ones
 AD_count_for_zero_voltage=2048; % the AD count that represents zero volt, which will be subtracted from the recorded AD counts during the processing here
-AD_count_to_uV_factor=3.3; % voltage in microvolt = (raw AD count - AD_count_for_zero_voltage) * AD_count_to_uV_factor; this code does not convert the AD counts to voltages--this conversion factor is saved along with the AD counts in the same .mat files, to be used by detect_spikes_from_raw_voltage_trace.m
-sampling_period_sec=(512/15)/1e6; % specify here the exact sampling period in s for the signal in a given recording channel, or leave it empty to read the sampling period from the Nlg event file header; this is the number of channels times the sampling period of the AD converter
+AD_count_to_uV_factor=3.3; % voltage in microvolt = (raw AD count - AD_count_for_zero_voltage) * AD_count_to_uV_factor; this code does not convert the AD counts to voltages--this conversion factor is saved along with the AD counts in the same .mat files, to be used by detect_spikes_from_raw_voltage_trace.m; alternatively, leave as [] to read this from the Nlg event file header
+sampling_period_sec=(512/15)/1e6; % specify here the exact sampling period in s for the signal in a given recording channel, or leave it as [] to read the sampling period from the Nlg event file header; this is the number of channels times the sampling period of the AD converter
 % For the Neurolog-16 that we use as of this writing (7/4/2016),
 % 512/15 = 34.13333... us is exactly 16 times the sampling period of the AD
 % converter. The sampling period from the header (34.133328 us) is slightly
 % inaccurate (would result in a difference of ~1 ms over ~2 hours compared
 % to using 512/15 us).
-samples_per_channel_per_file=524288; % specify here the number of samples per channel per Nlg .DAT file
+samples_per_channel_per_file=524288; % specify here the number of samples per channel per Nlg .DAT file; alternatively, leave as [] to automatically calculate this from the number of samples in the first file loaded and the number of channels, num_channels
 % For the Neurolog-16 that we use as of this writing (7/6/2016), each file
 % contain 2^24 bytes, and each sample takes 2 bytes, so the samples per
 % channel per file is 2^24 bytes / (2 bytes * 16 channels) = 524288
@@ -59,12 +58,14 @@ old_clock_difference_bug_correction=0; % if processing data recorded when the Nl
 for Nlg_folder_i=1:length(Nlg_folders) % for each of the Nlg folders
     Nlg_folder=Nlg_folders{Nlg_folder_i};
     output_folder=output_folders_for_each_Nlg_folder{Nlg_folder_i};
-    if ~exist(output_folder,'dir'); % make the output folder if it doesn't already exist
-        mkdir(output_folder);
-    end
     inactive_channels=inactive_channels_for_each_Nlg_folder{Nlg_folder_i};
     reference_channel=reference_channel_for_each_Nlg_folder{Nlg_folder_i};
     disp(['Processing the Nlg data in "' Nlg_folder '"...'])
+    if save_event_file || save_voltage_AD_count_files || save_options_parameters_CD_figure % if we're saving anything
+        if ~exist(output_folder,'dir'); % make the output folder if it doesn't already exist
+            mkdir(output_folder);
+        end
+    end
     %%
     % read Nlg event file; this code assumes that the columns of the Nlg event
     % file are, in order, "Event Number", "Time Stamp", "Time (ms from
@@ -97,12 +98,20 @@ for Nlg_folder_i=1:length(Nlg_folders) % for each of the Nlg folders
     if isempty(sampling_period_sec) % if the sampling period wasn't manually entered above, read it from the header
         Nlg_header_rows=1:first_numeric_row-2; % the row before the first numeric row is the column labels (eg. 'Time Stamp', 'Event Type', etc.), and the rows before that are the header
         Nlg_header=[imported_Nlg_event_xlsx{Nlg_header_rows,1}];
-        string_before_Ts='ADC Period = ';
-        string_after_Ts='us';
-        Ts_start_index=strfind(Nlg_header,string_before_Ts)+length(string_before_Ts);
-        Ts_end_index=strfind(Nlg_header,string_after_Ts)-1;
-        sampling_period_sec=str2double(Nlg_header(Ts_start_index:Ts_end_index))/1e6;
-        disp('Sampling period was not specified in this code; reading from Neurologger event file header instead...')
+        string_before='ADC Period = ';
+        string_after='us';
+        string_start_index=strfind(Nlg_header,string_before)+length(string_before);
+        string_end_index=strfind(Nlg_header,string_after)-1;
+        sampling_period_sec=str2double(Nlg_header(string_start_index:string_end_index))/1e6;
+    end
+    if isempty(AD_count_to_uV_factor) % if the conversion factor from AD counts to voltages wasn't manually entered above, read it from the header
+        Nlg_header_rows=1:first_numeric_row-2; % the row before the first numeric row is the column labels (eg. 'Time Stamp', 'Event Type', etc.), and the rows before that are the header
+        Nlg_header=[imported_Nlg_event_xlsx{Nlg_header_rows,1}];
+        string_before='ADC Resolution = ';
+        string_after='uV';
+        string_start_index=strfind(Nlg_header,string_before)+length(string_before);
+        string_end_index=strfind(Nlg_header,string_after)-1;
+        AD_count_to_uV_factor=str2double(Nlg_header(string_start_index:string_end_index));
     end
     
     event_timestamps_usec=cell2mat(imported_Nlg_event_xlsx(first_numeric_row:end,3))*1000; % time stamps, converted from ms to us
@@ -159,10 +168,14 @@ for Nlg_folder_i=1:length(Nlg_folders) % for each of the Nlg folders
     if save_event_file
         if save_in_mat_or_Nlx_format==1 % if saving in MATLAB format
             file_name_to_save=fullfile(output_folder,'EVENTS.mat');
-            save(file_name_to_save,'event_timestamps_usec','event_types_and_details')
+            clear variables_to_save
+            variables_to_save.event_timestamps_usec=event_timestamps_usec;
+            variables_to_save.event_types_and_details=event_types_and_details;
+            save(file_name_to_save,'-struct','variables_to_save')
             
             if save_event_file==2 % if also saving sperate event files for each event type
                 event_type_list=unique(event_types); % all the event types
+                clear variables_to_save
                 for event_type_i=1:length(event_type_list)
                     current_event_type=event_type_list{event_type_i};
                     indices_of_events_of_this_type=ismember(event_types,current_event_type); % find all the events of this type
@@ -186,9 +199,9 @@ for Nlg_folder_i=1:length(Nlg_folders) % for each of the Nlg folders
             % and the "Event Strings" input needs to be N X 1 (unlike what its
             % documentation states); note that the Nlx .nev format only stores
             % time in integer microseconds, and Mat2NlxEV rounds non-integer
-            % times towards zero (instead of towards nearest integer), so make
-            % sure all time stamps are integers before exporting (as they are
-            % in this code)
+            % times towards zero (instead of towards the nearest integer),
+            % so make sure all time stamps are integers before exporting
+            % (as they are in this code)
             
             if save_event_file==2 % if also saving sperate event files for each event type
                 event_type_list=unique(event_types); % all the event types
@@ -221,36 +234,17 @@ for Nlg_folder_i=1:length(Nlg_folders) % for each of the Nlg folders
             current_stop_recording_index=indices_stop_recording_events(stop_recording_i);
             find_partially_filled_Nlg_files(stop_recording_i)=max(indices_file_start_events(indices_file_start_events<current_stop_recording_index)); % the last "File started" event before the "Stopped recording" event
         end
-        find_partially_filled_Nlg_files=[find_partially_filled_Nlg_files; indices_file_start_events(end)]; % add in the last .DAT file, because if the battery runs out or the logger is turned off before the "stop recording" button is pressed, this last file is not followed by a "Stopped recording" event
+        find_partially_filled_Nlg_files=[find_partially_filled_Nlg_files; indices_file_start_events(end)]; %#ok<AGROW> % add in the last .DAT file, because if the battery runs out or the logger is turned off before the "stop recording" button is pressed, this last file is not followed by a "Stopped recording" event
         find_partially_filled_Nlg_files=unique(find_partially_filled_Nlg_files); % find unique indices, because the "Stopped recording" event sometimes happen twice in a row without any recording in-between
         found_event_strings=cell2mat(event_types_and_details(find_partially_filled_Nlg_files)); % these are eg. "File started. File index: 000"
         partially_filled_Nlg_files=find(ismember(file_start_details,found_event_strings)); % the indices of the partially filled files; note these indices start from 1, so that 1 is Nlg .DAT file 000, 2 is Nlg .DAT file 001, etc.
         
-        if save_in_mat_or_Nlx_format==1 % if saving in MATLAB format
-            AD_count_all_channels_all_files_int16=zeros(num_active_channels,samples_per_channel_per_file*num_Nlg_files,'int16'); % the variable where all voltage data will be saved, with the signed 16-bit integer format
-            timestamps_of_first_samples_usec=zeros(num_active_channels,num_Nlg_files); % the time stamps of the first sample of each file for each channel
-            % These are the only time stamps that will be saved if saving in
-            % the .mat format, because (1) these are the only time stamps the
-            % Nlg actually logs, (2) the time stamps of all samples can be
-            % calculated from these, and (3) this saves storage space. If we do
-            % want to save a time stamp for every sample, we should initialize
-            % here a "uint16" zeros vector the same size as
-            % "AD_count_all_channels_all_files_int16" above. The time stamps
-            % are microseconds from midnight, there are 8.64e10 microseconds in
-            % a day, so the unsigned 16-bit integer format is sufficient to
-            % store the time stamps, and saves storage and memory compared to
-            % other formats.
-            unwritten_samples=cell(size(partially_filled_Nlg_files)); % each cell contains the indices of the unwritten samples in a partially filled Nlg data file; the indices are counting from the beginning of the recording for a single channel and are the same for all channels
-            indices_of_first_samples=1:samples_per_channel_per_file:(num_Nlg_files-1)*samples_per_channel_per_file+1; % for a given channel, the indices of the first sample of every Nlg .DAT file, counting from the beginning of the recording; this is the same for all recording channels
-        elseif save_in_mat_or_Nlx_format==2 % if saving in Nlx format
-            Nlx_512_block_sampling_period_usec=512*sampling_period_sec*1e6; % 512 times the sampling period, in us
-        end
-        
+        first_file_loaded=1;
         for Nlg_file_i=1:num_Nlg_files % for each Nlg .DAT file
             Nlg_file_number_string=file_start_details{Nlg_file_i}(end-2:end); % eg. find "003" from "File started. File index: 003"
             Nlg_file_name=[Nlg_file_name_letters '_' Nlg_file_number_string '.DAT']; % eg. "NEUR_003.DAT"
             if ~exist(fullfile(Nlg_folder,Nlg_file_name),'file')
-                indices_missing_Nlg_files=[indices_missing_Nlg_files; Nlg_file_i]; % the indices here start from 1, unlike the Nlg. DAT file names which start from "000"
+                indices_missing_Nlg_files=[indices_missing_Nlg_files; Nlg_file_i]; %#ok<AGROW> % the indices here start from 1, unlike the Nlg. DAT file names which start from "000"
                 disp(['Cannot open ' Nlg_file_name '; continuing to next file...']);
                 continue
             end
@@ -258,6 +252,32 @@ for Nlg_folder_i=1:length(Nlg_folders) % for each of the Nlg folders
             file_data=fread(file_id,Nlg_data_type); % import the Nlg AD count data as a single column vector with the default class "double"
             fclose(file_id); % close the .DAT file
             disp(['Reading Nlg file ' Nlg_file_number_string '...'])
+            if first_file_loaded==1 % this is true for the first .DAT file loaded
+                first_file_loaded=0; % this is set to zero after the first file has already been loaded
+                if save_in_mat_or_Nlx_format==1 % if saving in MATLAB format
+                    if isempty(samples_per_channel_per_file)
+                        samples_per_channel_per_file=length(file_data)/num_channels;
+                    end
+                    AD_count_all_channels_all_files_int16=zeros(num_active_channels,samples_per_channel_per_file*num_Nlg_files,'int16'); % the variable where all voltage data will be saved, with the signed 16-bit integer format
+                    timestamps_of_first_samples_usec=zeros(num_active_channels,num_Nlg_files); % the time stamps of the first sample of each file for each channel
+                    % These are the only time stamps that will be saved if saving in
+                    % the .mat format, because (1) these are the only time stamps the
+                    % Nlg actually logs, (2) the time stamps of all samples can be
+                    % calculated from these, and (3) this saves storage space. If we do
+                    % want to save a time stamp for every sample, we should initialize
+                    % here a "uint16" zeros vector the same size as
+                    % "AD_count_all_channels_all_files_int16" above. The time stamps
+                    % are microseconds from midnight, there are 8.64e10 microseconds in
+                    % a day, so the unsigned 16-bit integer format is sufficient to
+                    % store the time stamps, and saves storage and memory compared to
+                    % other formats.
+                    unwritten_samples=cell(size(partially_filled_Nlg_files)); % each cell contains the indices of the unwritten samples in a partially filled Nlg data file; the indices are counting from the beginning of the recording for a single channel and are the same for all channels
+                    indices_of_first_samples=1:samples_per_channel_per_file:(num_Nlg_files-1)*samples_per_channel_per_file+1; % for a given channel, the indices of the first sample of every Nlg .DAT file, counting from the beginning of the recording; this is the same for all recording channels
+                elseif save_in_mat_or_Nlx_format==2 % if saving in Nlx format
+                    Nlx_512_block_sampling_period_usec=512*sampling_period_sec*1e6; % 512 times the sampling period, in us
+                end
+            end
+            
             AD_count_data=reshape(file_data,num_channels,[]); % reshape the data: each row is the data for a channel
             AD_count_data=AD_count_data(active_channels,:); % take only the active channels
             if any(Nlg_file_i==partially_filled_Nlg_files) % if the current Nlg .DAT file is partially filled
@@ -310,11 +330,12 @@ for Nlg_folder_i=1:length(Nlg_folders) % for each of the Nlg folders
                     ExportModeVector=[]; % don't need this when exporting all data
                     FieldSelectionFlags=[1 0 0 0 1 0]; % whether to export: Timestamps, Channel Numbers, Sample Frequency, Number of Valid Samples, Samples, Header
                     Mat2NlxCSC(file_name_to_save,AppendToFileFlag,ExportMode,ExportModeVector,FieldSelectionFlags,timestamps_of_blocks_usec,AD_count_single_channel_blocks);
-                    % Note that the Nlx .ncs format only stores time in integer
-                    % microseconds, and Mat2NlxCSC rounds non-integer times towards
-                    % zero (instead of towards nearest integer), so make sure all
-                    % time stamps are integers before exporting (as they are in
-                    % this code)
+                    % Note that the Nlx .ncs format only stores time in
+                    % integer microseconds, and Mat2NlxCSC rounds
+                    % non-integer times towards zero (instead of towards
+                    % the nearest integer), so make sure all time stamps
+                    % are integers before exporting (as they are in this
+                    % code)
                 end
             end
         end
@@ -344,6 +365,26 @@ for Nlg_folder_i=1:length(Nlg_folders) % for each of the Nlg folders
     if save_options_parameters_CD_figure
         file_name_to_save=fullfile(output_folder,['extract_Nlg_data_paramters_' date '.mat']);
         date_time_of_processing=datetime; % the date and time when this code was run
-        save(file_name_to_save,'Nlg_folder','output_folder','save_in_mat_or_Nlx_format','save_event_file','save_voltage_AD_count_files','inactive_channels','reference_channel','Nlg_file_name_letters','num_channels','AD_count_for_zero_voltage','AD_count_to_uV_factor','sampling_period_sec','samples_per_channel_per_file','Nlg_data_type','Nlg_unwritten_data_value','old_clock_difference_bug_correction','date_time_of_processing','indices_missing_Nlg_files')
+        clear variables_to_save
+        variables_to_save.Nlg_folder=Nlg_folder;
+        variables_to_save.output_folder=output_folder;
+        variables_to_save.save_in_mat_or_Nlx_format=save_in_mat_or_Nlx_format;
+        variables_to_save.save_event_file=save_event_file;
+        variables_to_save.save_voltage_AD_count_files=save_voltage_AD_count_files;
+        variables_to_save.inactive_channels=inactive_channels;
+        variables_to_save.reference_channel=reference_channel;
+        variables_to_save.Nlg_file_name_letters=Nlg_file_name_letters;
+        variables_to_save.num_channels=num_channels;
+        variables_to_save.AD_count_for_zero_voltage=AD_count_for_zero_voltage;
+        variables_to_save.AD_count_to_uV_factor=AD_count_to_uV_factor;
+        variables_to_save.sampling_period_sec=sampling_period_sec;
+        variables_to_save.samples_per_channel_per_file=samples_per_channel_per_file;
+        variables_to_save.Nlg_data_type=Nlg_data_type;
+        variables_to_save.Nlg_unwritten_data_value=Nlg_unwritten_data_value;
+        variables_to_save.old_clock_difference_bug_correction=old_clock_difference_bug_correction;
+        variables_to_save.date_time_of_processing=date_time_of_processing;
+        variables_to_save.indices_missing_Nlg_files=indices_missing_Nlg_files;
+        variables_to_save.last_code_update=last_code_update;
+        save(file_name_to_save,'-struct','variables_to_save')
     end
 end

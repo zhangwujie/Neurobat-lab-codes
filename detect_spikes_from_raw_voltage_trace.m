@@ -2,12 +2,11 @@
 % extract_Nlg_data.m), detect and extract potential spikes, and save as
 % Neuralynx .ntt files for spike sorting in SpikeSort3D.
 % 7/9/2016, Wujie Zhang
-% Last updated, 7/25/2016, Wujie Zhang
-
+last_code_update='7/28/2016, Wujie Zhang'; % identifies the version of the code
 %%
 % Input and ouput paths, options, and paramters
-voltage_trace_data_folders={'D:\Wujie\Analysis\19 Debugging and testing Nlg2Nlx code, 160629\test exports and imports\'}; % each cell is a folder where voltage traces are saved (as AD counts in .mat files as outputs of extract_Nlg_data.m)
-output_folders={'D:\Wujie\Analysis\19 Debugging and testing Nlg2Nlx code, 160629\test exports and imports\'}; % each cell is a folder where the outputs of the code (time stamps and waveforms of potential spikes, in the Nlx .ntt format) will be saved, corresponding to one of the folders in voltage_trace_data_folders
+voltage_trace_data_folders={'F:\Wujie\Data\yr2016_bat71319_robin\72716\nlxformat\'}; % each cell is a folder where voltage traces are saved (as AD counts in .mat files as outputs of extract_Nlg_data.m)
+output_folders={'F:\Wujie\Data\yr2016_bat71319_robin\72716\nlxformat\'}; % each cell is a folder where the outputs of the code (time stamps and waveforms of potential spikes, in the Nlx .ntt format) will be saved, corresponding to one of the folders in voltage_trace_data_folders
 output_spike_file_name_prefixes={''}; % the output file names will be a prefix followed by "TT#.ntt" where "#" is the tetrode number; can leave as an empty string; each cell here contains the prefix for one of the folders in output_folders
 
 save_options_and_parameters=1; % 0: don't save options and paramters in a .mat file ; 1: save
@@ -180,6 +179,21 @@ for voltage_trace_data_folder_i=1:length(voltage_trace_data_folders) % for each 
     if save_options_and_parameters
         file_name_to_save=fullfile(output_folder,['detect_spikes_from_raw_voltage_trace_paramters_' date '.mat']);
         date_time_of_processing=datetime; % the date and time when this code was run
-        save(file_name_to_save,'voltage_trace_data_folder','output_folder','output_spike_file_name_prefix','filter_cutoff_frequencies','hard_or_adaptive_spike_threshold','hard_spike_threshold','adaptive_spike_threshold_factor','spike_extraction_window_length','min_separation_between_spike_peaks','num_channels','channels_per_electrode_bundle','spike_thresholds','date_time_of_processing')
+        clear variables_to_save
+        variables_to_save.voltage_trace_data_folder=voltage_trace_data_folder;
+        variables_to_save.output_folder=output_folder;
+        variables_to_save.output_spike_file_name_prefix=output_spike_file_name_prefix;
+        variables_to_save.filter_cutoff_frequencies=filter_cutoff_frequencies;
+        variables_to_save.hard_or_adaptive_spike_threshold=hard_or_adaptive_spike_threshold;
+        variables_to_save.hard_spike_threshold=hard_spike_threshold;
+        variables_to_save.adaptive_spike_threshold_factor=adaptive_spike_threshold_factor;
+        variables_to_save.spike_extraction_window_length=spike_extraction_window_length;
+        variables_to_save.min_separation_between_spike_peaks=min_separation_between_spike_peaks;
+        variables_to_save.num_channels=num_channels;
+        variables_to_save.channels_per_electrode_bundle=channels_per_electrode_bundle;
+        variables_to_save.spike_thresholds=spike_thresholds;
+        variables_to_save.date_time_of_processing=date_time_of_processing;
+        variables_to_save.last_code_update=last_code_update;
+        save(file_name_to_save,'-struct','variables_to_save')
     end
 end

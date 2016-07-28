@@ -1,2 +1,2 @@
-# Neurobat-electrophysiology-preprocessing
-Codes for preprocessing data from electrophysiology experiments in the Neurobat lab.
+# Neurobat-lab-codes
+Codes for the Neurobat lab.

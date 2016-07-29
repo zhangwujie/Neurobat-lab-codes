@@ -14,9 +14,9 @@ save_options_and_parameters=1; % 0: don't save options and paramters in a .mat f
 filter_cutoff_frequencies=[600 6000]; % the lower and upper cut-off frequencies in Hz; the raw voltage traces will be band-pass filtered to retain only the frequency components relevant for spike detection and sorting
 
 % Potential spikes are detected as the filtered voltage trace crosses above a threshold
-hard_or_adaptive_spike_threshold=2; % 1: manually set a threshold for all channels; 2: adaptively set a threshold as a multiple of the estimated standard deviation of the noise in the voltage trace
-hard_spike_threshold=[60 60 60 60]; % the threshold(s) in uV, if hard_or_adaptive_spike_threshold is 1; can either enter one number, which will be used as the threshold for all channels, or a vector with one threshold for each electrode bundle
-adaptive_spike_threshold_factor=3; % the threshold is this number times the estimated noise standard deviation, if hard_or_adaptive_spike_threshold is 2; Rey et al. (2015, Brain Res Bull) recommends 3 to 5
+manual_or_automatic_spike_threshold=2; % 1: manually set a threshold for all channels; 2: automatically set a threshold as a multiple of the estimated standard deviation of the noise in the voltage trace
+manual_spike_threshold=[60 60 60 60]; % the threshold(s) in uV, if manual_or_automatic_spike_threshold is 1; can either enter one number, which will be used as the threshold for all channels, or a vector with one threshold for each electrode bundle
+automatic_spike_threshold_factor=3; % the threshold is this number times the estimated noise standard deviation, if manual_or_automatic_spike_threshold is 2; Rey et al. (2015, Brain Res Bull) recommends 3 to 5
 plot_voltage_traces_with_threshold=0; % whether or not to plot some of the filtered voltage traces with the spike threshold; note: this will pause the processing and require user input to continue
 
 spike_extraction_window_length=[-7 24]; % the first/second element indicates how many samples before/after the spike peak to extract as the spike waveform; currently (7/20/2016) the Neuralynx .ntt file needs [-7 24] for a total of 32 samples
@@ -50,6 +50,7 @@ for voltage_trace_data_folder_i=1:length(voltage_trace_data_folders) % for each 
     if ~exist(output_folder,'dir'); % make the output folder if it doesn't already exist
         mkdir(output_folder);
     end
+    spike_thresholds_all_channels=nan(channels_per_electrode_bundle*num_electrode_bundle,1);
     for electrode_bundle_i=1:num_electrode_bundle % for each of the electrode bundles, eg. tetrodes
         active_channels_on_current_bundle=intersect(active_channels,(electrode_bundle_i-1)*channels_per_electrode_bundle+1:electrode_bundle_i*channels_per_electrode_bundle); % find the active channels on the current electrode bundle
         if isempty(active_channels_on_current_bundle)
@@ -65,7 +66,7 @@ for voltage_trace_data_folder_i=1:length(voltage_trace_data_folders) % for each 
             if first_file_loaded==1 % this is true for the first file loaded
                 first_file_loaded=0; % this is set to zero after the first file has already been loaded
                 num_samples_per_channel=length(AD_count_int16);
-                start_recording_during_session=1+find(diff(indices_of_first_samples)~=samples_per_channel_per_file); % the indices of the Nlg .DAT files where recording was started after being stopped mid-session; note these indices start from 1, unlike the actual file names of the Nlg .DAT files which start from 000; this line finds them by finding the files where recording was stopped, which have less than the normal number of samples as a result of processing by extract_Nlg_data.m
+                start_recording_during_session=1+find(diff(indices_of_first_samples)~=samples_per_channel_per_file); % the indices of the Nlg .DAT files where recording was started after being stopped mid-session; note these indices start from 1, unlike the actual file names of the Nlg .DAT files which start from 000; this line finds them by finding the files where recording was stopped, which have less than the normal number of samples, because extract_Nlg_data.m deleted the samples that do not contain actual recorded data
                 discontinuous_start_sample_indices=indices_of_first_samples(start_recording_during_session); % for each of these samples, there was a large time gap between it and the immediately previous sample
                 recording_start_end_sample_indices=[1 discontinuous_start_sample_indices num_samples_per_channel+1]; % filtering will break the voltage traces into chunks that go from recording_start_end_sample_indices(i) to recording_start_end_sample_indices(i+1)-1
             end
@@ -84,13 +85,13 @@ for voltage_trace_data_folder_i=1:length(voltage_trace_data_folders) % for each 
         clear AD_count_int16 voltage_trace
         
         % Detect spikes as threshold-crossing by the filtered voltage traces
-        if hard_or_adaptive_spike_threshold==1 % using the manually-set hard threshold(s)
-            if length(hard_spike_threshold)==1
-                spike_thresholds=hard_spike_threshold*ones(num_channels_on_current_bundle,1);
-            elseif length(hard_spike_threshold)==num_electrode_bundle
-                spike_thresholds=hard_spike_threshold(electrode_bundle_i)*ones(num_channels_on_current_bundle,1);
+        if manual_or_automatic_spike_threshold==1 % using the manually-set threshold(s)
+            if length(manual_spike_threshold)==1
+                spike_thresholds=manual_spike_threshold*ones(num_channels_on_current_bundle,1);
+            elseif length(manual_spike_threshold)==num_electrode_bundle
+                spike_thresholds=manual_spike_threshold(electrode_bundle_i)*ones(num_channels_on_current_bundle,1);
             end
-        elseif hard_or_adaptive_spike_threshold==2 % automatically calculate a threshold (from Quian Quiroga et al., 2004, Neural Computation)
+        elseif manual_or_automatic_spike_threshold==2 % automatically calculate a threshold (from Quian Quiroga et al., 2004, Neural Computation)
             estimate_of_voltage_noise_std=median(abs(filtered_voltage_traces),2)/icdf('Normal',0.75,0,1);
             % Assume the fluctuations of the filtered voltage during
             % non-spiking periods (ie. the noise) is normally distributed
@@ -102,8 +103,9 @@ for voltage_trace_data_folder_i=1:length(voltage_trace_data_folders) % for each 
             % percentile of the standard normal distribution (whose standard
             % deviation is 1) is the standard deviation of the noise
             % distribution.
-            spike_thresholds=adaptive_spike_threshold_factor*estimate_of_voltage_noise_std;
+            spike_thresholds=automatic_spike_threshold_factor*estimate_of_voltage_noise_std;
         end
+        spike_thresholds_all_channels(active_channels_on_current_bundle)=spike_thresholds;
         
         if plot_voltage_traces_with_threshold
             figure(fig_threshold_check)
@@ -184,14 +186,14 @@ for voltage_trace_data_folder_i=1:length(voltage_trace_data_folders) % for each 
         variables_to_save.output_folder=output_folder;
         variables_to_save.output_spike_file_name_prefix=output_spike_file_name_prefix;
         variables_to_save.filter_cutoff_frequencies=filter_cutoff_frequencies;
-        variables_to_save.hard_or_adaptive_spike_threshold=hard_or_adaptive_spike_threshold;
-        variables_to_save.hard_spike_threshold=hard_spike_threshold;
-        variables_to_save.adaptive_spike_threshold_factor=adaptive_spike_threshold_factor;
+        variables_to_save.manual_or_automatic_spike_threshold=manual_or_automatic_spike_threshold;
+        variables_to_save.manual_spike_threshold=manual_spike_threshold;
+        variables_to_save.automatic_spike_threshold_factor=automatic_spike_threshold_factor;
         variables_to_save.spike_extraction_window_length=spike_extraction_window_length;
         variables_to_save.min_separation_between_spike_peaks=min_separation_between_spike_peaks;
         variables_to_save.num_channels=num_channels;
         variables_to_save.channels_per_electrode_bundle=channels_per_electrode_bundle;
-        variables_to_save.spike_thresholds=spike_thresholds;
+        variables_to_save.spike_thresholds_all_channels=spike_thresholds_all_channels;
         variables_to_save.date_time_of_processing=date_time_of_processing;
         variables_to_save.last_code_update=last_code_update;
         save(file_name_to_save,'-struct','variables_to_save')

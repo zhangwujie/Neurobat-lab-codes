@@ -2,12 +2,12 @@
 % extract_Nlg_data.m), detect and extract potential spikes, and save as
 % Neuralynx .ntt files for spike sorting in SpikeSort3D.
 % 7/9/2016, Wujie Zhang
-last_code_update='7/28/2016, Wujie Zhang'; % identifies the version of the code
+last_code_update='8/3/2016, Wujie Zhang'; % identifies the version of the code
 %%
 % Input and ouput paths, options, and paramters
-voltage_trace_data_folders={'F:\Wujie\Data\yr2016_bat71319_robin\72716\nlxformat\'}; % each cell is a folder where voltage traces are saved (as AD counts in .mat files as outputs of extract_Nlg_data.m)
-output_folders={'F:\Wujie\Data\yr2016_bat71319_robin\72716\nlxformat\'}; % each cell is a folder where the outputs of the code (time stamps and waveforms of potential spikes, in the Nlx .ntt format) will be saved, corresponding to one of the folders in voltage_trace_data_folders
-output_spike_file_name_prefixes={''}; % the output file names will be a prefix followed by "TT#.ntt" where "#" is the tetrode number; can leave as an empty string; each cell here contains the prefix for one of the folders in output_folders
+voltage_trace_data_folders={'F:\Wujie\Data\Pauling_CA2\72916\nlxformat\'}; % each cell is a folder where voltage traces are saved (as AD counts in .mat files as outputs of extract_Nlg_data.m)
+output_folders={'F:\Wujie\Data\Pauling_CA2\72916\nlxformat\'}; % each cell is a folder where the outputs of the code (time stamps and waveforms of potential spikes, in the Nlx .ntt format) will be saved, corresponding to one of the folders in voltage_trace_data_folders
+output_spike_file_name_prefixes={'Absolute peak heights '}; % the output file names will be a prefix followed by "TT#.ntt" where "#" is the tetrode number; can leave as an empty string; each cell here contains the prefix for one of the folders in output_folders
 
 save_options_and_parameters=1; % 0: don't save options and paramters in a .mat file ; 1: save
 
@@ -17,6 +17,7 @@ filter_cutoff_frequencies=[600 6000]; % the lower and upper cut-off frequencies 
 manual_or_automatic_spike_threshold=2; % 1: manually set a threshold for all channels; 2: automatically set a threshold as a multiple of the estimated standard deviation of the noise in the voltage trace
 manual_spike_threshold=[60 60 60 60]; % the threshold(s) in uV, if manual_or_automatic_spike_threshold is 1; can either enter one number, which will be used as the threshold for all channels, or a vector with one threshold for each electrode bundle
 automatic_spike_threshold_factor=3; % the threshold is this number times the estimated noise standard deviation, if manual_or_automatic_spike_threshold is 2; Rey et al. (2015, Brain Res Bull) recommends 3 to 5
+absolute_or_threshold_normalized_peak_heights=1; % when comparing the heights of voltage peaks on different channels of the same electrode bundle, whether to use 1: the absolute peak heights; or 2: peak heights normalized by the spike thresholds of the respective channels; this only makes a difference if using the automatic thresholds
 plot_voltage_traces_with_threshold=0; % whether or not to plot some of the filtered voltage traces with the spike threshold; note: this will pause the processing and require user input to continue
 
 spike_extraction_window_length=[-7 24]; % the first/second element indicates how many samples before/after the spike peak to extract as the spike waveform; currently (7/20/2016) the Neuralynx .ntt file needs [-7 24] for a total of 32 samples
@@ -35,7 +36,7 @@ for voltage_trace_data_folder_i=1:length(voltage_trace_data_folders) % for each 
     if plot_voltage_traces_with_threshold
         fig_threshold_check=figure;
     end
-    voltage_data_list=dir([voltage_trace_data_folder 'CSC*.mat']); % find all the .mat format voltage data files in the folder
+    voltage_data_list=dir(fullfile(voltage_trace_data_folder,'CSC*.mat')); % find all the .mat format voltage data files in the folder
     active_channels=zeros(1,length(voltage_data_list)); % each element will be a number between 1 and the total number of channels, indicating the number of each active channel
     for file_i=1:length(voltage_data_list)
         active_channels(file_i)=str2double(voltage_data_list(file_i).name(4:end-4))+1; % here we number the channels starting from 1, unlike the file names which follow the Neuralynx convention of starting from 0
@@ -91,18 +92,22 @@ for voltage_trace_data_folder_i=1:length(voltage_trace_data_folders) % for each 
             elseif length(manual_spike_threshold)==num_electrode_bundle
                 spike_thresholds=manual_spike_threshold(electrode_bundle_i)*ones(num_channels_on_current_bundle,1);
             end
-        elseif manual_or_automatic_spike_threshold==2 % automatically calculate a threshold (from Quian Quiroga et al., 2004, Neural Computation)
-            estimate_of_voltage_noise_std=median(abs(filtered_voltage_traces),2)/icdf('Normal',0.75,0,1);
+        elseif manual_or_automatic_spike_threshold==2 % automatically calculate a threshold (modified from Quian Quiroga et al., 2004, Neural Computation)
+            estimate_of_voltage_noise_std=(quantile(filtered_voltage_traces,0.75,2)-median(filtered_voltage_traces,2))/icdf('Normal',0.75,0,1);
             % Assume the fluctuations of the filtered voltage during
-            % non-spiking periods (ie. the noise) is normally distributed
-            % around zero. The median of the absolute values of the noise
-            % (approximated here by the median of the absolute values of the
-            % entire voltage trace, because spikes constitute a small
-            % proportion of the voltage trace) is the 75th percentile of the
-            % noise distribution. Then, this median divided by the 75th
-            % percentile of the standard normal distribution (whose standard
-            % deviation is 1) is the standard deviation of the noise
-            % distribution.
+            % non-spiking periods (ie. the noise) is normally distributed.
+            % We approximate the median and the 75th percentile of the
+            % noise voltage by the median and 75th percentile of the entire
+            % voltage trace, because spikes constitute a small proportion
+            % of the voltage trace. Then the difference between the 75th
+            % percentile and the median, divided by the 75th percentile of
+            % the standard normal distribution (whose mean is 0 and
+            % standard deviation is 1) is the standard deviation of the
+            % noise distribution. Because the Neurologger voltage
+            % measurements may sometimes have an offset (eg. all voltages
+            % are shifted slightly up from their true values), here we
+            % don't assume the noise distribution is centered around zero,
+            % unlike Quian Quiroga et al. (2004).
             spike_thresholds=automatic_spike_threshold_factor*estimate_of_voltage_noise_std;
         end
         spike_thresholds_all_channels(active_channels_on_current_bundle)=spike_thresholds;
@@ -138,7 +143,9 @@ for voltage_trace_data_folder_i=1:length(voltage_trace_data_folders) % for each 
         voltage_peaks=zeros(1,num_samples_per_channel); % a vector that will store, for each time point, the highest above-threshold peak across all channels, where each peak is detected on a single channel and its height is normalized to the channel's threshold
         for current_bundle_channel_i=1:num_channels_on_current_bundle % for each of the active channels on the current electrode bundle
             [peak_heights,sample_indices_of_peaks]=findpeaks(filtered_voltage_traces(current_bundle_channel_i,:),'MinPeakHeight',spike_thresholds(current_bundle_channel_i)); % find all the peaks in the filtered voltage trace that are also above threshold
-            peak_heights=peak_heights/spike_thresholds(current_bundle_channel_i); % normalize the peak heights by the threshold for that channel
+            if absolute_or_threshold_normalized_peak_heights==2
+                peak_heights=peak_heights/spike_thresholds(current_bundle_channel_i); % normalize the peak heights by the threshold for that channel
+            end
             higher_peaks=voltage_peaks(sample_indices_of_peaks)<peak_heights; % compare the heights of the peaks already stored with the ones detected on the current channel, and use logical indexing to express where the current channel has the higher peaks
             voltage_peaks(sample_indices_of_peaks(higher_peaks))=peak_heights(higher_peaks); % replace the stored peak heights with the ones detected on the current channel, wherever the current channel has higher peaks
         end
@@ -194,6 +201,7 @@ for voltage_trace_data_folder_i=1:length(voltage_trace_data_folders) % for each 
         variables_to_save.num_channels=num_channels;
         variables_to_save.channels_per_electrode_bundle=channels_per_electrode_bundle;
         variables_to_save.spike_thresholds_all_channels=spike_thresholds_all_channels;
+        variables_to_save.absolute_or_threshold_normalized_peak_heights=absolute_or_threshold_normalized_peak_heights;
         variables_to_save.date_time_of_processing=date_time_of_processing;
         variables_to_save.last_code_update=last_code_update;
         save(file_name_to_save,'-struct','variables_to_save')

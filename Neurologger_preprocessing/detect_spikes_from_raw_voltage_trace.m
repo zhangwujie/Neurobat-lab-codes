@@ -2,12 +2,12 @@
 % extract_Nlg_data.m), detect and extract potential spikes, and save as
 % Neuralynx .ntt files for spike sorting in SpikeSort3D.
 % 7/9/2016, Wujie Zhang
-last_code_update='8/3/2016, Wujie Zhang'; % identifies the version of the code
+last_code_update='8/10/2016, Wujie Zhang'; % identifies the version of the code
 %%
 % Input and ouput paths, options, and paramters
 voltage_trace_data_folders={'F:\Wujie\Data\Pauling_CA2\72916\nlxformat\'}; % each cell is a folder where voltage traces are saved (as AD counts in .mat files as outputs of extract_Nlg_data.m)
 output_folders={'F:\Wujie\Data\Pauling_CA2\72916\nlxformat\'}; % each cell is a folder where the outputs of the code (time stamps and waveforms of potential spikes, in the Nlx .ntt format) will be saved, corresponding to one of the folders in voltage_trace_data_folders
-output_spike_file_name_prefixes={'Absolute peak heights '}; % the output file names will be a prefix followed by "TT#.ntt" where "#" is the tetrode number; can leave as an empty string; each cell here contains the prefix for one of the folders in output_folders
+output_spike_file_name_prefixes={''}; % the output file names will be a prefix followed by "TT#.ntt" where "#" is the tetrode number; can leave as an empty string; each cell here contains the prefix for one of the folders in output_folders
 
 save_options_and_parameters=1; % 0: don't save options and paramters in a .mat file ; 1: save
 
@@ -19,6 +19,17 @@ manual_spike_threshold=[60 60 60 60]; % the threshold(s) in uV, if manual_or_aut
 automatic_spike_threshold_factor=3; % the threshold is this number times the estimated noise standard deviation, if manual_or_automatic_spike_threshold is 2; Rey et al. (2015, Brain Res Bull) recommends 3 to 5
 absolute_or_threshold_normalized_peak_heights=1; % when comparing the heights of voltage peaks on different channels of the same electrode bundle, whether to use 1: the absolute peak heights; or 2: peak heights normalized by the spike thresholds of the respective channels; this only makes a difference if using the automatic thresholds
 plot_voltage_traces_with_threshold=0; % whether or not to plot some of the filtered voltage traces with the spike threshold; note: this will pause the processing and require user input to continue
+
+% Comparison of the waveforms of detected spikes with a library of accepted
+% waveforms; adapted from Michael Yartsev
+compare_detected_waveforms_with_library=1; % 1: for each potential spike, calculate the correlations between its waveform and the waveforms from a library of accepted spikes, and reject the waveforms with low corelations; 0: don't do this
+waveform_library_file='D:\Wujie\Scripts\Code package for prepocessing Nlg data\library_of_acceptable_spike_shapes.mat'; % the library of acceptable waveforms compiled by Michael Yartsev
+lowest_acceptable_correlation=0.9; % if the correlations between a detected waveform and all waveforms in the library are below this value, then reject that detected potential spike; Michael recommends 0.95
+
+% Check if all electrode bundles (tetrodes) detect spikes at the same
+% times; adapted from Michael Yartsev
+check_spike_coincidence_across_electrode_bundles=1; % 1: if a potential spike appears at the same time across all electode bundles (tetrodes), then delete it because it's likely an artifact; 0: don't do this
+maximum_coincidence_interval_usec=500; % if the maximum difference between the times of spike detection from all electode bundles (tetrodes) is less than or equal to this value, then the spike is deleted on all electode bundles (tetrodes); in microsec
 
 spike_extraction_window_length=[-7 24]; % the first/second element indicates how many samples before/after the spike peak to extract as the spike waveform; currently (7/20/2016) the Neuralynx .ntt file needs [-7 24] for a total of 32 samples
 min_separation_between_spike_peaks=abs(spike_extraction_window_length(1)); % the sample indices of the peaks of two consecutive spikes must be larger than this number; the peaks can be detected on the same or different channels
@@ -52,6 +63,10 @@ for voltage_trace_data_folder_i=1:length(voltage_trace_data_folders) % for each 
         mkdir(output_folder);
     end
     spike_thresholds_all_channels=nan(channels_per_electrode_bundle*num_electrode_bundle,1);
+    timestamps_usec_all_electrode_bundles=cell(num_electrode_bundle,1);
+    spike_waveforms_all_electrode_bundles=cell(num_electrode_bundle,1);
+    num_spikes_all_electrode_bundles=nan(num_electrode_bundle,1);
+    
     for electrode_bundle_i=1:num_electrode_bundle % for each of the electrode bundles, eg. tetrodes
         active_channels_on_current_bundle=intersect(active_channels,(electrode_bundle_i-1)*channels_per_electrode_bundle+1:electrode_bundle_i*channels_per_electrode_bundle); % find the active channels on the current electrode bundle
         if isempty(active_channels_on_current_bundle)
@@ -59,6 +74,7 @@ for voltage_trace_data_folder_i=1:length(voltage_trace_data_folders) % for each 
         end
         num_channels_on_current_bundle=length(active_channels_on_current_bundle);
         
+        %%
         % Filtering the voltage traces
         disp(['Filtering voltage traces from ' lower(bundle_name) ' ' num2str(electrode_bundle_i) '...'])
         for current_bundle_channel_i=1:num_channels_on_current_bundle % for each of the active channels on this electrode bundle
@@ -85,6 +101,7 @@ for voltage_trace_data_folder_i=1:length(voltage_trace_data_folders) % for each 
         end
         clear AD_count_int16 voltage_trace
         
+        %%
         % Detect spikes as threshold-crossing by the filtered voltage traces
         if manual_or_automatic_spike_threshold==1 % using the manually-set threshold(s)
             if length(manual_spike_threshold)==1
@@ -153,34 +170,104 @@ for voltage_trace_data_folder_i=1:length(voltage_trace_data_folders) % for each 
         sample_indices_of_peaks(sample_indices_of_peaks+spike_extraction_window_length(1)<1 | sample_indices_of_peaks+spike_extraction_window_length(2)>num_samples_per_channel)=[]; % delete the peaks that would lead to spike waveform windows that extend beyond the recording time
         clear voltage_peaks
         
+        %%
         % Extracting the spike waveforms
         disp(['Extracting spikes from ' lower(bundle_name) ' ' num2str(electrode_bundle_i) '...'])
         num_spikes=length(sample_indices_of_peaks);
         spike_waveforms=zeros(32,4,num_spikes);
-        timestamps_usec=round(get_timestamps_for_Nlg_voltage_samples(sample_indices_of_peaks,indices_of_first_samples,timestamps_of_first_samples_usec,sampling_period_usec)); % the time stamps of all the spike peaks, rounded to integer microseconds
+        timestamps_usec=round(get_timestamps_for_Nlg_voltage_samples(sample_indices_of_peaks,indices_of_first_samples,timestamps_of_first_samples_usec,sampling_period_usec)); % the time stamps of all the spike peaks, rounded to integer microseconds; note that these are the time stamps of the last channel on this electrode bundle, which differ from the time stamps on the other channels of this electrode bundle by a few sampling periods of the Nlg AD converter
         for spike_i=1:num_spikes
             channel_indices_for_current_bundle=active_channels_on_current_bundle-(electrode_bundle_i-1)*channels_per_electrode_bundle; % eg. converting channels 5, 6, 7, and 8 (the four electrodes on tetrode 2) into indices 1, 2, 3, and 4
             spike_waveforms(:,channel_indices_for_current_bundle,spike_i)=round(filtered_voltage_traces(:,sample_indices_of_peaks(spike_i)+spike_extraction_window_length(1):sample_indices_of_peaks(spike_i)+spike_extraction_window_length(2))).'; % save the waveforms of the current spike from all active channels, rounding to integer uV
         end
         
-        % Saving the time stamps and waveforms of spikes in Nlx .ntt format
-        disp(['Saving spikes from ' lower(bundle_name) ' ' num2str(electrode_bundle_i) '...'])
-        % The following works with the current version of Mat2NlxSpike (Version
-        % 6.0.0) as of this writing (7/13/2016).
-        NTT_file_name=[output_spike_file_name_prefix 'TT' num2str(electrode_bundle_i) '.ntt'];
-        file_name_to_save=fullfile(output_folder,NTT_file_name);
-        AppendToFileFlag=0; % save new file, or overwrite existing file, but do not append to existing file
-        ExportMode=1; % export all spikes
-        ExportModeVector=[]; % don't need this when exporting all spikes
-        FieldSelectionFlags=[1 0 1 0 1 1]; % whether or not to export: time stamps, spike channel numbers, the clusters that spikes are assigned to, spike features, spike waveforms, and header
-        cluster_numbers=zeros(1,length(timestamps_usec)); % zero means that the corresponding spike is not assigned to any cluster; we have to do this because Mat2NlxSpike 6.0.0 has a bug: if this input is omitted, all spikes are incorrectly assigned to clusters
-        NTT_header={'######## Neuralynx Data File Header';'-ADMaxValue 500';'-ADBitVolts 1.0 1.0 1.0 1.0'}; % "-ADMaxValue 500" ensures that when "shift + right click" to preview waveforms in SpikeSort3D, the voltage axis has reasonable scales
-        Mat2NlxSpike(file_name_to_save,AppendToFileFlag,ExportMode,ExportModeVector,FieldSelectionFlags,timestamps_usec,cluster_numbers,spike_waveforms,NTT_header)
-        % Note that if the time stamp and waveform inputs to Mat2NlxSpike
-        % (6.0.0) are in certain integer formats, Mat2NlxSpike cannot correctly
-        % save them, even though the .NTT file saves the waveforms and time
-        % stamps in integer data formats. Thus, "timestamps_usec" and
-        % "spike_waveforms" here are in the "double" format.
+        %%
+        % Comparison of the waveforms of detected spikes with a library of
+        % accepted waveforms; adapted from Michael Yartsev
+        if compare_detected_waveforms_with_library
+            disp(['Comparing detected spike waveforms from ' lower(bundle_name) ' ' num2str(electrode_bundle_i) ' with waveform library...'])
+            load(waveform_library_file) % this contains the variable "library_of_acceptable_spike_shapes" which is 183 rows (the different waveforms) by 32 columns (the 32 voltage samples of each waveforms); the waveforms are all peak-normalized
+            logical_indices_of_accepted_spikes=false(size(spike_waveforms,3),1); % a given element of this variable will be 1 (or 0) if the corresponding spike will be accepted (or rejected)
+            for spike_i=1:size(spike_waveforms,3)
+                [~,channel_with_highest_peak]=max(max(spike_waveforms(:,:,spike_i),[],1)); % find the channel with the highest peak
+                waveform_to_test=spike_waveforms(:,channel_with_highest_peak,spike_i);
+                max_correlation_with_library=max([corr(waveform_to_test(2:end-1),library_of_acceptable_spike_shapes(:,2:end-1).') corr(waveform_to_test(2:end-1),library_of_acceptable_spike_shapes(:,1:end-2).') corr(waveform_to_test(2:end-1),library_of_acceptable_spike_shapes(:,3:end).')]); % for each detected spike, Michael calculates correlations after shifting the waveforms in the library by -1, 0, and 1 samples, and look for the maximum correlation
+                logical_indices_of_accepted_spikes(spike_i)=max_correlation_with_library>=lowest_acceptable_correlation;
+            end
+            spike_waveforms=spike_waveforms(:,:,logical_indices_of_accepted_spikes);
+            timestamps_usec=timestamps_usec(logical_indices_of_accepted_spikes);
+        end
+        
+        %%
+        timestamps_usec_all_electrode_bundles{electrode_bundle_i}=timestamps_usec;
+        spike_waveforms_all_electrode_bundles{electrode_bundle_i}=spike_waveforms;
+        num_spikes_all_electrode_bundles(electrode_bundle_i)=length(timestamps_usec);
+    end
+    
+    %%
+    % If all electrode bundles (tetrodes) detect a spike at the same time
+    % (ie. within a coincidence time window), it's possible that that's an
+    % artifact; here we check for and reject all such spikes; adapted from
+    % Michael Yartsev
+    % Note: currently, this code does not rigorously deal with cases when
+    % more than 1 spike occurs within the coincidence time window on the
+    % SAME electrode bundle, which should be uncommon
+    if check_spike_coincidence_across_electrode_bundles
+        disp(['Checking for spikes detected at the same time on all ' lower(bundle_name) 's...'])
+        indices_active_bundles=find(~isnan(num_spikes_all_electrode_bundles)).'; % indices of the active electrode bundles (tetrodes)
+        [~,index_bundle_with_minimum_num_spikes]=min(num_spikes_all_electrode_bundles); % index of the electrode bundle with the smallest number of spikes; the number of spikes on inactive bundles is NaN, which does not count as smaller than actual numbers here
+        spike_indices_to_delete=zeros(num_electrode_bundle,length(timestamps_usec_all_electrode_bundles{index_bundle_with_minimum_num_spikes})); % each row is an electrode bundle, the number of columns is the maximum number of spikes that can be detected at the same time on all electrode bundles
+        num_detected_coincidences=0;
+        for bundle_spike_i=1:length(timestamps_usec_all_electrode_bundles{index_bundle_with_minimum_num_spikes}) % for each of the spikes from the electrode bundle with the smallest number of spikes
+            go_to_next_spike=0;
+            current_spike_times_to_consider_for_coincidence=nan(num_electrode_bundle,1); % for the current spike that is possibly occuring at the same time on all electrode bundles, this variable will be filled with the spike times on the different electrode bundles
+            current_spike_times_to_consider_for_coincidence(index_bundle_with_minimum_num_spikes)=timestamps_usec_all_electrode_bundles{index_bundle_with_minimum_num_spikes}(bundle_spike_i);
+            current_spike_indices_to_consider_for_coincidence=nan(num_electrode_bundle,1); % the indices within each electrode bundle, of the spikes that are currently being considered as occuring at the same time
+            current_spike_indices_to_consider_for_coincidence(index_bundle_with_minimum_num_spikes)=bundle_spike_i;
+            for electrode_bundle_i=indices_active_bundles(~ismember(indices_active_bundles,index_bundle_with_minimum_num_spikes)) % for each of the other electrode bundles
+                intervals_between_spikes_on_two_bundles=abs(timestamps_usec_all_electrode_bundles{electrode_bundle_i}-current_spike_times_to_consider_for_coincidence(index_bundle_with_minimum_num_spikes)); % the intervals between all the spikes on electrode_bundle_i and the current spike on the electrode bundle with the smallest number of spikes
+                [min_interval,index_closest_spike]=min(intervals_between_spikes_on_two_bundles); % the spike on electrode_bundle_i that is closest
+                if min_interval<=maximum_coincidence_interval_usec
+                    current_spike_times_to_consider_for_coincidence(electrode_bundle_i)=timestamps_usec_all_electrode_bundles{electrode_bundle_i}(index_closest_spike);
+                    current_spike_indices_to_consider_for_coincidence(electrode_bundle_i)=index_closest_spike;
+                else
+                    go_to_next_spike=1;
+                    break
+                end
+            end
+            if go_to_next_spike==0 && range(current_spike_times_to_consider_for_coincidence)<=maximum_coincidence_interval_usec % check if the spike times on the other electode bundles are all within the coincidence time window; the "range" function disregards NaNs, which would be on inactive electrode bundles
+                num_detected_coincidences=num_detected_coincidences+1;
+                spike_indices_to_delete(:,num_detected_coincidences)=current_spike_indices_to_consider_for_coincidence;
+            end
+        end
+        for electrode_bundle_i=indices_active_bundles
+            timestamps_usec_all_electrode_bundles{electrode_bundle_i}(spike_indices_to_delete(electrode_bundle_i,1:num_detected_coincidences))=[]; % delete the rejected spikes
+            spike_waveforms_all_electrode_bundles{electrode_bundle_i}(:,:,spike_indices_to_delete(electrode_bundle_i,1:num_detected_coincidences))=[];
+        end
+    end
+    
+    %%
+    for electrode_bundle_i=1:num_electrode_bundle % for each of the electrode bundles, eg. tetrodes
+        if ~isempty(timestamps_usec_all_electrode_bundles{electrode_bundle_i}) % check if the electrode bundle has no spikes (eg. if all its channels are inactive)
+            % Saving the time stamps and waveforms of spikes in Nlx .ntt format
+            disp(['Saving spikes from ' lower(bundle_name) ' ' num2str(electrode_bundle_i) '...'])
+            % The following works with the current version of Mat2NlxSpike (Version
+            % 6.0.0) as of this writing (7/13/2016).
+            NTT_file_name=[output_spike_file_name_prefix 'TT' num2str(electrode_bundle_i) '.ntt'];
+            file_name_to_save=fullfile(output_folder,NTT_file_name);
+            AppendToFileFlag=0; % save new file, or overwrite existing file, but do not append to existing file
+            ExportMode=1; % export all spikes
+            ExportModeVector=[]; % don't need this when exporting all spikes
+            FieldSelectionFlags=[1 0 1 0 1 1]; % whether or not to export: time stamps, spike channel numbers, the clusters that spikes are assigned to, spike features, spike waveforms, and header
+            cluster_numbers=zeros(1,length(timestamps_usec_all_electrode_bundles{electrode_bundle_i})); % zero means that the corresponding spike is not assigned to any cluster; we have to do this because Mat2NlxSpike 6.0.0 has a bug: if this input is omitted, all spikes are incorrectly assigned to clusters
+            NTT_header={'######## Neuralynx Data File Header';'-ADMaxValue 500';'-ADBitVolts 1.0 1.0 1.0 1.0'}; % "-ADMaxValue 500" ensures that when "shift + right click" to preview waveforms in SpikeSort3D, the voltage axis has reasonable scales
+            Mat2NlxSpike(file_name_to_save,AppendToFileFlag,ExportMode,ExportModeVector,FieldSelectionFlags,timestamps_usec_all_electrode_bundles{electrode_bundle_i},cluster_numbers,spike_waveforms_all_electrode_bundles{electrode_bundle_i},NTT_header)
+            % Note that if the time stamp and waveform inputs to Mat2NlxSpike
+            % (6.0.0) are in certain integer formats, Mat2NlxSpike cannot correctly
+            % save them, even though the .NTT file saves the waveforms and time
+            % stamps in integer data formats. Thus, "timestamps_usec" and
+            % "spike_waveforms" here are integers in the "double" format.
+        end
     end
     disp(['Finished saving spikes from all voltage traces in "' voltage_trace_data_folder '".'])
     %%
@@ -202,6 +289,11 @@ for voltage_trace_data_folder_i=1:length(voltage_trace_data_folders) % for each 
         variables_to_save.channels_per_electrode_bundle=channels_per_electrode_bundle;
         variables_to_save.spike_thresholds_all_channels=spike_thresholds_all_channels;
         variables_to_save.absolute_or_threshold_normalized_peak_heights=absolute_or_threshold_normalized_peak_heights;
+        variables_to_save.compare_detected_waveforms_with_library=compare_detected_waveforms_with_library;
+        variables_to_save.waveform_library_file=waveform_library_file;
+        variables_to_save.lowest_acceptable_correlation=lowest_acceptable_correlation;
+        variables_to_save.check_spike_coincidence_across_electrode_bundles=check_spike_coincidence_across_electrode_bundles;
+        variables_to_save.maximum_coincidence_interval_usec=maximum_coincidence_interval_usec;
         variables_to_save.date_time_of_processing=date_time_of_processing;
         variables_to_save.last_code_update=last_code_update;
         save(file_name_to_save,'-struct','variables_to_save')

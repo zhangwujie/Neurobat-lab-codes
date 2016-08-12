@@ -13,19 +13,20 @@
 % -Before running, need to convert the Neurologger .NLE event file to .xlsx
 % format
 % 7/2/2016, Wujie Zhang
-last_code_update='7/28/2016, Wujie Zhang'; % identifies the version of the code
+last_code_update='8/11/2016, Wujie Zhang'; % identifies the version of the code
 %%
 % Input and ouput paths, options, and paramters
-Nlg_folders={'F:\Wujie\Data\yr2016_bat71319_robin\72716\nlgformat\'}; % each cell is a folder where Nlg voltage data files and event file are stored
+Nlg_folders={'D:\Wujie\Temp\29\'}; % each cell is a folder where Nlg voltage data files and event file are stored
 output_folders_for_each_Nlg_folder={'F:\Wujie\Data\yr2016_bat71319_robin\72716\nlxformat\'}; % each cell is a folder where the outputs of the code (voltage and event data in MATLAB or Nlx formats) will be saved, corresponding to one of the folders in Nlg_folders
 
 inactive_channels_for_each_Nlg_folder={[]}; % each cell is a vector containing numbers between 1 and the number of channels, indicating the disabled channels; enter an empty vector if all channels are active; each cell corresponds to one of the folders in Nlg_folders
 reference_channel_for_each_Nlg_folder={[]}; % each cell is a number between 1 and the number of channels, indicating a reference channel whose AD counts (equivalently, voltages) will be subtracted from those of all other channels during the processing here; enter an empty vector to not subtract any reference channel here; each cell corresponds to one of the folders in Nlg_folders
 
 save_in_mat_or_Nlx_format=1; % 1: save in .mat format; 2: save in Nlx .nev and .ncs formats
-save_event_file=1; % 0: don't save any event file; 1: save one event file containing all events; 2: save one event file containing all events and one event file for each event type
-save_voltage_AD_count_files=1; % 0: don't save voltage data files; 1: save
-save_options_parameters_CD_figure=1; % 1: save the options and paramters for the current run of the code in a .mat file, and the figure showing the clock difference correction; 0: don't save
+save_event_file=0; % 0: don't save any event file; 1: save one event file containing all events; 2: save one event file containing all events and one event file for each event type
+save_voltage_AD_count_files=0; % 0: don't save voltage data files; 1: save
+save_options_parameters_CD_figure=0; % 1: save the options and paramters for the current run of the code in a .mat file, and the figure showing the clock difference correction; 0: don't save
+global_or_local_clock_difference_estimation=1; % to estimate unreported clock differences, 1: fit a line using all reported clock differences in a recording interval where clocks are not synchronized; 2: interpolate between consecutive time points with reported clock differences
 %%
 % Parameters specific to the Neurologger used
 Nlg_file_name_letters='NEUR'; % the first four letters of the Nlg .DAT file names; eg. 'NEUR' for file names like "NEUR_003.DAT"
@@ -139,24 +140,56 @@ for Nlg_folder_i=1:length(Nlg_folders) % for each of the Nlg folders
         clock_differences_sec=clock_differences_sec*16+0.03;
     end
     clock_differences_usec=clock_differences_sec*1e6; % convert from s to us
-    
     transceiver_times=logger_times-clock_differences_usec; % the times of the transceiver clock when the clock differences were reported
+    
+    indices_bordering_unsynchronized_intervals=[1; find(ismember(event_types_and_details,'Clocks synchronized. ')); length(event_types_and_details)]; % the events when the two clocks are synchronzied, and the first and last event
     indices_events_with_transceiver_time=find(ismember(event_timestamps_source,'Transceiver')); % find the events that were originally logged with transceiver time stamps
-    interpolated_clock_differences=interp1(transceiver_times,clock_differences_usec,event_timestamps_usec(indices_events_with_transceiver_time),'linear','extrap');
-    % Estimate the clock differences at all the time points that were
-    % originally logged with the transceiver clock, by linearly interpolating
-    % between the clock differences of each pair of consecutive PC-generated
-    % comments; also extrapolates for time points before the first PC-generated
-    % comment or after the last
-    event_timestamps_usec(indices_events_with_transceiver_time)=event_timestamps_usec(indices_events_with_transceiver_time)+interpolated_clock_differences; % convert the time stamps that were originally transceiver times to logger times
+    estimated_clock_differences=nan(length(indices_events_with_transceiver_time),1);
+    
+    for unsynchronized_interval_i=1:length(indices_bordering_unsynchronized_intervals)-1 % for each of the intervals between consecutive "Clocks synchronized" events
+        logical_indices_transc_t_in_interval=indices_events_with_transceiver_time>indices_bordering_unsynchronized_intervals(unsynchronized_interval_i) & indices_events_with_transceiver_time<indices_bordering_unsynchronized_intervals(unsynchronized_interval_i+1); % all the events that were originally logged with transceiver time stamps in the current interval
+        if ~any(logical_indices_transc_t_in_interval) % if there is no events in the current interval whose clock difference need to be estimated
+            continue
+        end
+        logical_indices_PC_comments_in_interval=PC_comments_indices>indices_bordering_unsynchronized_intervals(unsynchronized_interval_i) & PC_comments_indices<indices_bordering_unsynchronized_intervals(unsynchronized_interval_i+1); % all the events in the current interval when clock difference was reported
+        transceiver_times_in_interval=transceiver_times(logical_indices_PC_comments_in_interval);
+        clock_differences_usec_in_interval=clock_differences_usec(logical_indices_PC_comments_in_interval);
+        if length(clock_differences_usec_in_interval)==1 % if there is only one reported clock difference in the current interval, then use that for all unreported clock differences
+            estimated_clock_differences(logical_indices_transc_t_in_interval)=clock_differences_usec_in_interval;
+        else
+            % Estimate the clock differences at all the time points in the
+            % current interval that were originally logged with the
+            % transceiver clock
+            if global_or_local_clock_difference_estimation==1
+                [slope_and_intercept,~,mean_std_x]=polyfit(transceiver_times_in_interval,clock_differences_usec_in_interval,1);
+                estimated_clock_differences(logical_indices_transc_t_in_interval)=polyval(slope_and_intercept,event_timestamps_usec(indices_events_with_transceiver_time(logical_indices_transc_t_in_interval)),[],mean_std_x);
+                % Estimate by fitting a line over the clock differences of
+                % all the PC-generated comments in the current interval
+            elseif global_or_local_clock_difference_estimation==2
+                estimated_clock_differences(logical_indices_transc_t_in_interval)=interp1(transceiver_times_in_interval,clock_differences_usec_in_interval,event_timestamps_usec(indices_events_with_transceiver_time(logical_indices_transc_t_in_interval)),'linear','extrap');
+                % Estimate by linearly interpolating between the clock
+                % differences of each pair of consecutive PC-generated
+                % comments; also extrapolates for time points before the
+                % first PC-generated comment or after the last
+            end
+        end
+    end
+    if any(isnan(estimated_clock_differences))
+        disp('Unable to estimate clock differences at some of the events...')
+    end
+    event_timestamps_usec(indices_events_with_transceiver_time)=event_timestamps_usec(indices_events_with_transceiver_time)+estimated_clock_differences; % convert the time stamps that were originally transceiver times to logger times
     
     event_timestamps_usec=round(event_timestamps_usec); % round all time stamps to integer microseconds
     
     figure % plot the result of clock difference correction to check for mistakes
     hold on
-    plot((logger_times-event_timestamps_usec(1))/(1e6*60),clock_differences_usec/1e3,'ro') % logger times vs. the reported clock differences that were used for interpolation
-    plot((event_timestamps_usec(indices_events_with_transceiver_time)-event_timestamps_usec(1))/(1e6*60),interpolated_clock_differences/1e3,'b.') % logger times vs. the interpolated clock differences for all the time stamps that were originally transceiver times
-    legend('Recorded clock differences','Interpolated clock differences')
+    plot((logger_times-event_timestamps_usec(1))/(1e6*60),clock_differences_usec/1e3,'ro') % logger times vs. the reported clock differences that were used for estimation
+    plot((event_timestamps_usec(indices_events_with_transceiver_time)-event_timestamps_usec(1))/(1e6*60),estimated_clock_differences/1e3,'b.') % logger times vs. the estimated clock differences for all the time stamps that were originally transceiver times
+    plot((event_timestamps_usec(indices_bordering_unsynchronized_intervals(2:end-1))-event_timestamps_usec(1))/(1e6*60),zeros(length(indices_bordering_unsynchronized_intervals(2:end-1)),1),'k*') % the events when the two clocks are synchronized
+    legend('Recorded clock differences','Estimated clock differences','Clock synchronization events')
+    % Even right after clock synchronization, the reported clock difference
+    % may not be zero, because there is a finite uncertainty in the
+    % reported clock difference
     hold on
     ylabel('Logger time - transceiver time (ms)')
     xlabel('Logger time (minutes)')
@@ -373,6 +406,7 @@ for Nlg_folder_i=1:length(Nlg_folders) % for each of the Nlg folders
         variables_to_save.save_voltage_AD_count_files=save_voltage_AD_count_files;
         variables_to_save.inactive_channels=inactive_channels;
         variables_to_save.reference_channel=reference_channel;
+        variables_to_save.global_or_local_clock_difference_estimation=global_or_local_clock_difference_estimation;
         variables_to_save.Nlg_file_name_letters=Nlg_file_name_letters;
         variables_to_save.num_channels=num_channels;
         variables_to_save.AD_count_for_zero_voltage=AD_count_for_zero_voltage;

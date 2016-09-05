@@ -28,7 +28,7 @@
 % whose elements are the time stamps for corresponding samples in
 % sample_indices
 
-function timestamps_usec=get_timestamps_for_Nlg_voltage_samples_test(sample_indices,indices_of_first_samples,timestamps_of_first_samples_usec,sampling_period_usec)
+function timestamps_usec=get_timestamps_for_Nlg_voltage_samples(sample_indices,indices_of_first_samples,timestamps_of_first_samples_usec,sampling_period_usec)
 timestamps_usec=nan(size(sample_indices)); % initialize an array of NaNs the same size as sample_indices
 indices_of_first_samples = [indices_of_first_samples inf];
 for i = 1:numel(indices_of_first_samples)-1

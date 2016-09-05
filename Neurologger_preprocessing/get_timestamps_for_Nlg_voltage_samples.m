@@ -5,7 +5,7 @@
 % use this function to calculate the time stamps for the samples we're
 % interested in.
 % 7/12/2016, Wujie Zhang
-% Last updated, 7/20/2016, Wujie Zhang
+% Last updated, 9/5/2016, Maimon Rose
 %
 % Inputs:
 % -sample_indices: the indices of the AD count or voltage samples in a
@@ -28,10 +28,12 @@
 % whose elements are the time stamps for corresponding samples in
 % sample_indices
 
-function timestamps_usec=get_timestamps_for_Nlg_voltage_samples(sample_indices,indices_of_first_samples,timestamps_of_first_samples_usec,sampling_period_usec)
+function timestamps_usec=get_timestamps_for_Nlg_voltage_samples_test(sample_indices,indices_of_first_samples,timestamps_of_first_samples_usec,sampling_period_usec)
 timestamps_usec=nan(size(sample_indices)); % initialize an array of NaNs the same size as sample_indices
-for i=1:numel(sample_indices) % go through each element of sample_indices, using linear indexing
-    file_index=find(sample_indices(i)>=indices_of_first_samples,1,'last'); % the file to which the current sample index belongs
-    periods_from_first_sample_in_file=sample_indices(i)-indices_of_first_samples(file_index); % the number of sampling periods between the current sample and the first sample in the file
-    timestamps_usec(i)=timestamps_of_first_samples_usec(file_index)+periods_from_first_sample_in_file*sampling_period_usec;
+indices_of_first_samples = [indices_of_first_samples inf];
+for i = 1:numel(indices_of_first_samples)-1
+    timestamp_index = sample_indices>=indices_of_first_samples(i) & sample_indices<indices_of_first_samples(i+1);
+    n_samples_in_file = sum(timestamp_index);
+    timestamps_usec(timestamp_index) = timestamps_of_first_samples_usec(i) + (0:n_samples_in_file-1)*sampling_period_usec;
+end
 end

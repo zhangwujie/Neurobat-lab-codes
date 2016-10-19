@@ -1,4 +1,4 @@
-function [slope_and_intercept, mean_std_x, total_samples_by_file, first_nlg_pulse_time, first_audio_pulse_time] = align_avi_to_nlg(base_dir,ttl_pulse_dt,corr_pulse_err,correct_end_off,correct_loop,wav_file_nums,session_strings)
+function [shared_nlg_pulse_times, shared_audio_pulse_times, total_samples_by_file, first_nlg_pulse_time, first_audio_pulse_time] = align_avi_to_nlg(base_dir,ttl_pulse_dt,corr_pulse_err,correct_end_off,correct_loop,wav_file_nums,session_strings)
 %%
 % Function to correct for clock drift between avisoft audio recordings and
 % NLG neural recordings.
@@ -17,13 +17,16 @@ function [slope_and_intercept, mean_std_x, total_samples_by_file, first_nlg_puls
 % time period to analyze in this script from EVENTLOG file.
 %
 % OUTPUT:
-% slope_and_intercept: the slope and intercept of the best fit line which
-% will return the estimated difference between the NLG clock and the audio
-% clock (i.e. NLG time = AVI time + clock difference).
 %
-% mean_std_x: Centering and scaling parameters for independent variable in
-% best fit line to be used in conjuction with slope_and_intercept to call
-% polyval().
+% shared_nlg_pulse_times: times (ms) in NLG time when TTL pulses arrived on
+% the NLG Tx. To be used with avi2nlg_time to locally interpolate
+% differences between time on AVI and NLG and correct for those
+% differences.
+%
+% shared_audio_pulse_times: times (ms) in AVI time when TTL pulses arrived 
+% on the AVI recorder. To be used with avi2nlg_time to locally interpolate
+% differences between time on AVI and NLG and correct for those
+% differences.
 %
 % total_samples_by_file: number of audio samples in each audio file. Used
 % in order to determine time within a given audio file that is part of a
@@ -110,45 +113,16 @@ shared_audio_pulse_times = audio_pulse_times(shared_pulse_audio_idx);
 first_nlg_pulse_time = shared_nlg_pulse_times(1);
 first_audio_pulse_time = shared_audio_pulse_times(1);
 
-% nlg_t = 1e-3*nlg_timestamps_usec; % convert timestamps to ms
-% nlg_t_idx = (nlg_t>=shared_nlg_pulse_times(1)) & (nlg_t<=shared_nlg_pulse_times(end)); % extract timestamps only from time when NLG and avisoft are sharing pulses
-% nlg_t = nlg_t(nlg_t_idx);
-%
-% audio_t = (1e3*((0:length(audio_ttl))/fs_wav)); % convert time to msec
-% audio_t_idx = (audio_t>=shared_audio_pulse_times(1)) & (audio_t<=shared_audio_pulse_times(end)); % extract timestamps only from time when NLG and avisoft are sharing pulses
-% audio_t = audio_t(audio_t_idx);
-
 clock_differences_at_pulses = (shared_nlg_pulse_times - first_nlg_pulse_time) - (shared_audio_pulse_times - first_audio_pulse_time); % determine difference between NLG and avisoft timestamps when pulses arrived
 
-[slope_and_intercept,~,mean_std_x]=polyfit(shared_audio_pulse_times-first_audio_pulse_time,clock_differences_at_pulses,1); % fit line to all clock differences with respect to avisoft timestamps
-
-estimated_clock_diff =  polyval(slope_and_intercept,shared_audio_pulse_times - first_audio_pulse_time,[],mean_std_x);
 figure
-subplot(2,1,1)
-hold on
-plot(clock_differences_at_pulses,clock_differences_at_pulses-estimated_clock_diff,'x')
-xlabel('difference between NLG clock and avisoft clock');
-ylabel('deviation of estimated clock differences from real clock differences');
-subplot(2,1,2)
 hold on
 plot(shared_audio_pulse_times-first_audio_pulse_time,clock_differences_at_pulses,'.-');
-plot(shared_audio_pulse_times-first_audio_pulse_time,estimated_clock_diff,'r');
 xlabel('Incoming Audio Pulse Times')
 ylabel('Difference between NLG clock and avisoft clock');
-legend('real clock difference','estimated clock difference');
+legend('real clock difference');
 
 if save_options_parameters_CD_figure
     saveas(gcf,fullfile(audio_dir,'CD_correction_avisoft_nlg.fig'))
 end
-
-% corrected_audio_t = audio_t + estimated_clock_differences; % add those differences to avisoft timestamps
-%
-% % reference each set of timestamps to the first TTL pulse received on each
-% % system
-% corrected_audio_t  = corrected_audio_t - corrected_audio_t(1);
-% nlg_t = nlg_t - nlg_t(1);
-
 end
-
-
-

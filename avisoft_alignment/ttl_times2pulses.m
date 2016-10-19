@@ -18,7 +18,7 @@ function [pulse_idx, pulse_time, err_pulses] = ttl_times2pulses(times,pulse_dt,c
 %
 % correct_loop: 1 to find and correct for looping through playback files
 % (e.g. if only 1 hr of playback files are prepared, and recording lasts
-% 1.5 hrs). NOTE: will only correct for ONE loop, either 0 or >1 loops will 
+% 1.5 hrs). NOTE: will only correct for ONE loop, >1 loops will 
 % throw an error. 0 to not correct for this error.
 %
 % NOTE: Using correct_end_off and correct_loop can be avoided by better
@@ -55,6 +55,7 @@ function [pulse_idx, pulse_time, err_pulses] = ttl_times2pulses(times,pulse_dt,c
 %
 % Maimon Rose 9/2/16
 %%%
+manual_bad_err_corr = 1;
 unique_ttls_dir = 'C:\Users\phyllo\Documents\Maimon\misc\nlg_alignment\unique_ttls\';
 ttl_diffs = diff(times);
 chunk_times = [times(1) times(ttl_diffs>pulse_dt) times(1)];
@@ -78,7 +79,6 @@ pulse_idx_orig = pulse_idx;
 
 err_pulses = intersect(find(pulse_idx-[pulse_idx(1)-1 pulse_idx(1:end-1)]~=1),... find pulses which 'stick out' from both neighboring pulses
                        find(pulse_idx-[pulse_idx(2:end) pulse_idx(end)+1]~=-1));
-
 if correct_end_off % end of 'zero signal' TTL file may have erroneous TTL pulse at end, correct if so
     load([unique_ttls_dir 'unique_ttl_params.mat'],'n_pulse_per_chunk');
     end_offs = err_pulses(rem(pulse_idx(err_pulses-1),n_pulse_per_chunk)==0); % check if erroneous TTL pulse comes at end of chunk (i.e. end of unique TTL file) by find err pulses with rem(pulse_idx,n_pulse_per_chunk) = 0
@@ -89,7 +89,30 @@ end
                    
 err_pulses = intersect(find(pulse_idx-[pulse_idx(1)-1 pulse_idx(1:end-1)]~=1),... recalculate err_pulses after removing 'end_off' pulses
                        find(pulse_idx-[pulse_idx(2:end) pulse_idx(end)+1]~=-1));
+                   
+if correct_loop
+    load([unique_ttls_dir 'unique_ttl_params.mat'],'n_pulse_per_chunk','n_chunk');
+    loop_rep_idx = find(pulse_idx==n_pulse_per_chunk*n_chunk);
+    if isempty(loop_rep_idx)
+        display('no loop found!');
+    elseif length(loop_rep_idx) == 1
+        pulse_idx(loop_rep_idx+1:end) = pulse_idx(loop_rep_idx+1:end) + pulse_idx(loop_rep_idx);
+    else
+        display('multiple potential loop points found');
+        keyboard;
+        loop_rep_idx = input('input index(ices) of variable ''pulse_idx'' corresponding to last pulse before looping');
+        if length(loop_rep_idx) > 1
+            for loop = loop_rep_idx
+                pulse_idx(loop+1:end) = pulse_idx(loop+1:end) + pulse_idx(loop) - (pulse_idx(loop+1)-1);
+            end
+        else
+            pulse_idx(loop_rep_idx+1:end) = pulse_idx(loop_rep_idx+1:end) + pulse_idx(loop_rep_idx);
+        end
+    end
+end
 
+err_pulses = intersect(find(pulse_idx-[pulse_idx(1)-1 pulse_idx(1:end-1)]~=1),... recalculate err_pulses after removing 'loop' pulses
+                       find(pulse_idx-[pulse_idx(2:end) pulse_idx(end)+1]~=-1));
 
 if pulse_idx(end) - pulse_idx(end-1) ~=1
    err_pulses = [err_pulses length(pulse_idx)];
@@ -98,15 +121,41 @@ end
 if correct_err
     if sum(diff(err_pulses)<2)~=0
         display([num2str(sum(diff(err_pulses)<2)) ' adjacent error pulses!']);
-        try
-            pulse_idx(err_pulses) = pulse_idx(err_pulses-1)+1;
-        catch
-            pulse_idx(err_pulses) = pulse_idx(err_pulses+1)-1;
+        if manual_bad_err_corr
+            bad_err = err_pulses(diff(err_pulses)<2);
+            err_pulses = setdiff(err_pulses,bad_err);
+            try
+                pulse_idx(err_pulses) = pulse_idx(err_pulses-1)+1;
+            catch
+                pulse_idx(err_pulses) = pulse_idx(err_pulses+1)-1;
+            end
+            keyboard;
+            for err = 1:length(bad_err)
+                return_to_code = input('return to code?');
+                if return_to_code == 1
+                    keyboard;
+                end
+                replace_bad_err = input('replace (1) bad error pulse or remove (2) bad error pulse and surrounding pulses?');
+                if replace_bad_err == 1
+                    pulse_idx(bad_err) = input('replacement value?');
+                elseif replace_bad_err == 2
+                    bad_err_to_remove = [bad_err bad_err+1 bad_err-1];
+                    bad_err_to_remove = bad_err_to_remove(bad_err_to_remove>1 & bad_err_to_remove<=length(pulse_idx));
+                    pulse_idx(bad_err_to_remove) = [];
+                    pulse_time(bad_err_to_remove) = [];
+                end
+            end                    
+        else
+            try
+                pulse_idx(err_pulses) = pulse_idx(err_pulses-1)+1;
+            catch
+                pulse_idx(err_pulses) = pulse_idx(err_pulses+1)-1;
+            end
+            bad_err = err_pulses(diff(err_pulses)<2);
+            bad_err = [bad_err bad_err+1 bad_err-1];
+            bad_err = bad_err(bad_err>1 & bad_err<=length(pulse_idx));
+            pulse_idx(bad_err) = [];
         end
-        bad_err = err_pulses(diff(err_pulses)<2);
-        bad_err = [bad_err bad_err+1 bad_err-1];
-        bad_err = bad_err(bad_err>1 & bad_err<=length(pulse_idx));
-        pulse_idx(bad_err) = [];
     else
         try
             pulse_idx(err_pulses) = pulse_idx(err_pulses-1)+1;
@@ -116,17 +165,9 @@ if correct_err
     end
 end
 
-if correct_loop
-    loop_rep_idx = find(diff(pulse_idx)~=1);
-    if pulse_idx(loop_rep_idx) == max(pulse_idx) && pulse_idx(loop_rep_idx+1) == min(pulse_idx)
-        pulse_idx(loop_rep_idx+1:end) = pulse_idx(loop_rep_idx+1:end) + pulse_idx(loop_rep_idx);
-    else
-        display('no loop found!');
-    end
-end
+
 figure;
 hold on
 plot(pulse_idx_orig,'rx');
 plot(pulse_idx);
 end
-

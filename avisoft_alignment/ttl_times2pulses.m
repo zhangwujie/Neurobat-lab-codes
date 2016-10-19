@@ -55,7 +55,7 @@ function [pulse_idx, pulse_time, err_pulses] = ttl_times2pulses(times,pulse_dt,c
 %
 % Maimon Rose 9/2/16
 %%%
-manual_bad_err_corr = 1;
+manual_bad_err_corr = 0;
 unique_ttls_dir = 'C:\Users\phyllo\Documents\Maimon\misc\nlg_alignment\unique_ttls\';
 ttl_diffs = diff(times);
 chunk_times = [times(1) times(ttl_diffs>pulse_dt) times(1)];
@@ -146,15 +146,19 @@ if correct_err
                 end
             end                    
         else
+            bad_err = err_pulses(diff(err_pulses)<2);
+            err_pulses = setdiff(err_pulses,bad_err);
             try
                 pulse_idx(err_pulses) = pulse_idx(err_pulses-1)+1;
             catch
                 pulse_idx(err_pulses) = pulse_idx(err_pulses+1)-1;
             end
-            bad_err = err_pulses(diff(err_pulses)<2);
-            bad_err = [bad_err bad_err+1 bad_err-1];
-            bad_err = bad_err(bad_err>1 & bad_err<=length(pulse_idx));
-            pulse_idx(bad_err) = [];
+            for err = 1:length(bad_err)
+                bad_err_to_remove = [bad_err bad_err+1 bad_err-1];
+                bad_err_to_remove = bad_err_to_remove(bad_err_to_remove>1 & bad_err_to_remove<=length(pulse_idx));
+                pulse_idx(bad_err_to_remove) = [];
+                pulse_time(bad_err_to_remove) = [];
+            end
         end
     else
         try

@@ -13,20 +13,21 @@
 % -Before running, need to convert the Neurologger .NLE event file to .xlsx
 % format
 % 7/2/2016, Wujie Zhang
-last_code_update='8/11/2016, Wujie Zhang'; % identifies the version of the code
+last_code_update='9/6/2016, Wujie Zhang'; % identifies the version of the code
 %%
 % Input and ouput paths, options, and paramters
-Nlg_folders={'D:\Wujie\Temp\29\'}; % each cell is a folder where Nlg voltage data files and event file are stored
-output_folders_for_each_Nlg_folder={'F:\Wujie\Data\yr2016_bat71319_robin\72716\nlxformat\'}; % each cell is a folder where the outputs of the code (voltage and event data in MATLAB or Nlx formats) will be saved, corresponding to one of the folders in Nlg_folders
+Nlg_folders={'F:\Wujie\Data\bat selection recording 1\20161018 cf\nlgformat\'}; % each cell is a folder where Nlg voltage data files and event file are stored
+output_folders_for_each_Nlg_folder={'F:\Wujie\Data\bat selection recording 1\20161018 cf\neural\'}; % each cell is a folder where the outputs of the code (voltage and event data in MATLAB or Nlx formats) will be saved, corresponding to one of the folders in Nlg_folders
 
-inactive_channels_for_each_Nlg_folder={[]}; % each cell is a vector containing numbers between 1 and the number of channels, indicating the disabled channels; enter an empty vector if all channels are active; each cell corresponds to one of the folders in Nlg_folders
+inactive_channels_for_each_Nlg_folder={[2:16]}; % each cell is a vector containing numbers between 1 and the number of channels, indicating the disabled channels; enter an empty vector if all channels are active; each cell corresponds to one of the folders in Nlg_folders
 reference_channel_for_each_Nlg_folder={[]}; % each cell is a number between 1 and the number of channels, indicating a reference channel whose AD counts (equivalently, voltages) will be subtracted from those of all other channels during the processing here; enter an empty vector to not subtract any reference channel here; each cell corresponds to one of the folders in Nlg_folders
 
 save_in_mat_or_Nlx_format=1; % 1: save in .mat format; 2: save in Nlx .nev and .ncs formats
-save_event_file=0; % 0: don't save any event file; 1: save one event file containing all events; 2: save one event file containing all events and one event file for each event type
-save_voltage_AD_count_files=0; % 0: don't save voltage data files; 1: save
-save_options_parameters_CD_figure=0; % 1: save the options and paramters for the current run of the code in a .mat file, and the figure showing the clock difference correction; 0: don't save
+save_event_file=1; % 0: don't save any event file; 1: save one event file containing all events; 2: save one event file containing all events and one event file for each event type
+save_voltage_AD_count_files=1; % 0: don't save voltage data files; 1: save
+save_options_parameters_CD_figure=1; % 1: save the options and paramters for the current run of the code in a .mat file, and the figure showing the clock difference correction; 0: don't save
 global_or_local_clock_difference_estimation=1; % to estimate unreported clock differences, 1: fit a line using all reported clock differences in a recording interval where clocks are not synchronized; 2: interpolate between consecutive time points with reported clock differences
+timestamps_from_eventlog_or_sampling_period=2; % for the time stamps of the first sample of each Nlg .DAT file, 1: take them from the event log; 2: calculate them by counting the number of samples since recording start, and multiplying by the sampling period; the second method might be more accurate, because the event log time stamps are rounded to integer milliseconds, while the sampling period is tens of microseconds
 %%
 % Parameters specific to the Neurologger used
 Nlg_file_name_letters='NEUR'; % the first four letters of the Nlg .DAT file names; eg. 'NEUR' for file names like "NEUR_003.DAT"
@@ -183,10 +184,10 @@ for Nlg_folder_i=1:length(Nlg_folders) % for each of the Nlg folders
     
     figure % plot the result of clock difference correction to check for mistakes
     hold on
+    plot((event_timestamps_usec(indices_bordering_unsynchronized_intervals(2:end-1))-event_timestamps_usec(1))/(1e6*60),zeros(length(indices_bordering_unsynchronized_intervals(2:end-1)),1),'k*') % the events when the two clocks are synchronized
     plot((logger_times-event_timestamps_usec(1))/(1e6*60),clock_differences_usec/1e3,'ro') % logger times vs. the reported clock differences that were used for estimation
     plot((event_timestamps_usec(indices_events_with_transceiver_time)-event_timestamps_usec(1))/(1e6*60),estimated_clock_differences/1e3,'b.') % logger times vs. the estimated clock differences for all the time stamps that were originally transceiver times
-    plot((event_timestamps_usec(indices_bordering_unsynchronized_intervals(2:end-1))-event_timestamps_usec(1))/(1e6*60),zeros(length(indices_bordering_unsynchronized_intervals(2:end-1)),1),'k*') % the events when the two clocks are synchronized
-    legend('Recorded clock differences','Estimated clock differences','Clock synchronization events')
+    legend('Clock synchronization events','Recorded clock differences','Estimated clock differences','Location','best')
     % Even right after clock synchronization, the reported clock difference
     % may not be zero, because there is a finite uncertainty in the
     % reported clock difference
@@ -273,6 +274,8 @@ for Nlg_folder_i=1:length(Nlg_folders) % for each of the Nlg folders
         partially_filled_Nlg_files=find(ismember(file_start_details,found_event_strings)); % the indices of the partially filled files; note these indices start from 1, so that 1 is Nlg .DAT file 000, 2 is Nlg .DAT file 001, etc.
         
         first_file_loaded=1;
+        first_file_after_recording_start=1; % as the code processes each Nlg .DAT file in sequence, this variable will be updated to reflect the index of the first file during the current period of continuous recording (eg. if recording was stopped and restarted during one experimental session, this would be the first file after recording was restarted)
+        file_start_timestamp_discrepancies_ms=nan(num_Nlg_files,1); % for each .DAT file, the file start time stamp read from the event log minus that calculated by number of samples from recording start, after rounding both time stamps to integer ms
         for Nlg_file_i=1:num_Nlg_files % for each Nlg .DAT file
             Nlg_file_number_string=file_start_details{Nlg_file_i}(end-2:end); % eg. find "003" from "File started. File index: 003"
             Nlg_file_name=[Nlg_file_name_letters '_' Nlg_file_number_string '.DAT']; % eg. "NEUR_003.DAT"
@@ -337,9 +340,22 @@ for Nlg_folder_i=1:length(Nlg_folders) % for each of the Nlg folders
             end
             AD_count_data=-AD_count_data; % the voltage trace is inverted so that spikes start with an increase in voltage followed by a decrease
             
-            current_file_start_timestamps_usec=file_start_timestamps_usec(Nlg_file_i)+(0:ADC_sampling_period_usec:(num_channels-1)*ADC_sampling_period_usec); % time stamps of first sample of each of the channels; Jacob Vecht confirmed that the first sample of a file occurs at the file start time, unlike what was implied in the Neurologger manual (version 03-Apr-15 16:10:00)
-            current_file_start_timestamps_usec=current_file_start_timestamps_usec(active_channels); % only the time stamps for the active channels
-            timestamps_of_first_samples_usec(:,Nlg_file_i)=current_file_start_timestamps_usec;
+            file_start_timestamps_usec_from_sampling_period=file_start_timestamps_usec(first_file_after_recording_start)+samples_per_channel_per_file*(Nlg_file_i-first_file_after_recording_start)*sampling_period_sec*1e6; % time stamp of the first sample of the current .DAT file = the number of samples since recording start * sampling period
+            file_start_timestamp_discrepancies_ms(Nlg_file_i)=round(file_start_timestamps_usec(Nlg_file_i)/1000)-round(file_start_timestamps_usec_from_sampling_period/1000); % difference between the event log time stamp and the time stamp calculated by counting samples, after roundig both to integer ms
+            if abs(file_start_timestamp_discrepancies_ms(Nlg_file_i))>0
+                disp(['File start time stamp read from event log and that calculated by samples differ by ' num2str(abs(file_start_timestamp_discrepancies_ms(Nlg_file_i))) ' ms...']) % occasional differences of 1 ms might be OK, because they could result from the millisecond resolution of the first time stamp after recording start
+            end
+            if timestamps_from_eventlog_or_sampling_period==1 || Nlg_file_i==first_file_after_recording_start % take the time stamp of the first sample of a .DAT file from the event log if the user specifies so, or if the current file is the first file after starting recording
+                current_file_start_timestamps_usec=file_start_timestamps_usec(Nlg_file_i)+(0:ADC_sampling_period_usec:(num_channels-1)*ADC_sampling_period_usec); % time stamps of first sample of each of the channels; Jacob Vecht confirmed that the first sample of a file occurs at the file start time, unlike what was implied in the Neurologger manual (version 03-Apr-15 16:10:00)
+            elseif timestamps_from_eventlog_or_sampling_period==2 % calculate the time stamp of the first sample of a .DAT file by counting the number of samples since recording start and multiplying by the sampling period
+                current_file_start_timestamps_usec=file_start_timestamps_usec_from_sampling_period+(0:ADC_sampling_period_usec:(num_channels-1)*ADC_sampling_period_usec);
+            end
+            timestamps_of_first_samples_usec(:,Nlg_file_i)=current_file_start_timestamps_usec(active_channels); % only save the time stamps for the active channels
+            
+            if any(Nlg_file_i==partially_filled_Nlg_files) && Nlg_file_i~=num_Nlg_files % if the current Nlg .DAT file is partially filled and recording resumed later
+                first_file_after_recording_start=Nlg_file_i+1; % updated to be the file after the partially filled file
+            end
+            
             if save_in_mat_or_Nlx_format==1 % if saving in MATLAB format
                 AD_count_all_channels_all_files_int16(:,(Nlg_file_i-1)*samples_per_channel_per_file+1:Nlg_file_i*samples_per_channel_per_file)=int16(AD_count_data); % the data from the current .DAT file, converted to signed 16-bit integers
             elseif save_in_mat_or_Nlx_format==2 % if saving in Nlx format
@@ -407,6 +423,7 @@ for Nlg_folder_i=1:length(Nlg_folders) % for each of the Nlg folders
         variables_to_save.inactive_channels=inactive_channels;
         variables_to_save.reference_channel=reference_channel;
         variables_to_save.global_or_local_clock_difference_estimation=global_or_local_clock_difference_estimation;
+        variables_to_save.timestamps_from_eventlog_or_sampling_period=timestamps_from_eventlog_or_sampling_period;
         variables_to_save.Nlg_file_name_letters=Nlg_file_name_letters;
         variables_to_save.num_channels=num_channels;
         variables_to_save.AD_count_for_zero_voltage=AD_count_for_zero_voltage;
@@ -417,7 +434,12 @@ for Nlg_folder_i=1:length(Nlg_folders) % for each of the Nlg folders
         variables_to_save.Nlg_unwritten_data_value=Nlg_unwritten_data_value;
         variables_to_save.old_clock_difference_bug_correction=old_clock_difference_bug_correction;
         variables_to_save.date_time_of_processing=date_time_of_processing;
-        variables_to_save.indices_missing_Nlg_files=indices_missing_Nlg_files;
+        if exist('indices_missing_Nlg_files','var')
+            variables_to_save.indices_missing_Nlg_files=indices_missing_Nlg_files;
+        end
+        if exist('file_start_timestamp_discrepancies_ms','var')
+            variables_to_save.file_start_timestamp_discrepancies_ms=file_start_timestamp_discrepancies_ms;
+        end
         variables_to_save.last_code_update=last_code_update;
         save(file_name_to_save,'-struct','variables_to_save')
     end

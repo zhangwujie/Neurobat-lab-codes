@@ -2,11 +2,11 @@
 % extract_Nlg_data.m), detect and extract potential spikes, and save as
 % Neuralynx .ntt files for spike sorting in SpikeSort3D.
 % 7/9/2016, Wujie Zhang
-last_code_update='8/10/2016, Wujie Zhang'; % identifies the version of the code
+last_code_update='11/30/2016, Wujie Zhang'; % identifies the version of the code
 %%
 % Input and ouput paths, options, and paramters
-voltage_trace_data_folders={'F:\Wujie\Data\Pauling_CA2\72916\nlxformat\'}; % each cell is a folder where voltage traces are saved (as AD counts in .mat files as outputs of extract_Nlg_data.m)
-output_folders={'F:\Wujie\Data\Pauling_CA2\72916\nlxformat\'}; % each cell is a folder where the outputs of the code (time stamps and waveforms of potential spikes, in the Nlx .ntt format) will be saved, corresponding to one of the folders in voltage_trace_data_folders
+voltage_trace_data_folders={'F:\Wujie\Data\Maimon data\yr2016_bat60091_garfunkle_Nlg\neurologger_recording20160322\neural\nlg1\'}; % each cell is a folder where voltage traces are saved (as AD counts in .mat files as outputs of extract_Nlg_data.m)
+output_folders={'F:\Wujie\Data\Maimon data\yr2016_bat60091_garfunkle_Nlg\neurologger_recording20160322\neural\nlg1\'}; % each cell is a folder where the outputs of the code (time stamps and waveforms of potential spikes, in the Nlx .ntt format) will be saved, corresponding to one of the folders in voltage_trace_data_folders
 output_spike_file_name_prefixes={''}; % the output file names will be a prefix followed by "TT#.ntt" where "#" is the tetrode number; can leave as an empty string; each cell here contains the prefix for one of the folders in output_folders
 
 save_options_and_parameters=1; % 0: don't save options and paramters in a .mat file ; 1: save
@@ -22,13 +22,13 @@ plot_voltage_traces_with_threshold=0; % whether or not to plot some of the filte
 
 % Comparison of the waveforms of detected spikes with a library of accepted
 % waveforms; adapted from Michael Yartsev
-compare_detected_waveforms_with_library=1; % 1: for each potential spike, calculate the correlations between its waveform and the waveforms from a library of accepted spikes, and reject the waveforms with low corelations; 0: don't do this
-waveform_library_file='D:\Wujie\Scripts\Code package for prepocessing Nlg data\library_of_acceptable_spike_shapes.mat'; % the library of acceptable waveforms compiled by Michael Yartsev
-lowest_acceptable_correlation=0.9; % if the correlations between a detected waveform and all waveforms in the library are below this value, then reject that detected potential spike; Michael recommends 0.95
+compare_detected_waveforms_with_library_or_typical_waveforms=2; % 1: for each potential spike, calculate the correlations between its waveform and the waveforms from a library of accepted spikes, and reject the waveforms with low corelations; 2: calculate correlations with only two typical waveforms from the library (one broad and one narrow spike); 0: don't do this step
+waveform_library_file='D:\Wujie\Scripts\Code package for prepocessing Nlg data\library_of_acceptable_spike_shapes_peak_aligned_at_8.mat'; % the library of acceptable waveforms compiled by Michael Yartsev
+lowest_acceptable_correlation=0.5; % for each potential spike, if the highest correlation is below this value, then reject that potential spike; Michael recommends 0.95 if calculating correlations with the entire library
 
 % Check if all electrode bundles (tetrodes) detect spikes at the same
 % times; adapted from Michael Yartsev
-check_spike_coincidence_across_electrode_bundles=1; % 1: if a potential spike appears at the same time across all electode bundles (tetrodes), then delete it because it's likely an artifact; 0: don't do this
+check_spike_coincidence_across_electrode_bundles=0; % 1: if a potential spike appears at the same time across all electode bundles (tetrodes), then delete it because it's likely an artifact; 0: don't do this
 maximum_coincidence_interval_usec=500; % if the maximum difference between the times of spike detection from all electode bundles (tetrodes) is less than or equal to this value, then the spike is deleted on all electode bundles (tetrodes); in microsec
 
 spike_extraction_window_length=[-7 24]; % the first/second element indicates how many samples before/after the spike peak to extract as the spike waveform; currently (7/20/2016) the Neuralynx .ntt file needs [-7 24] for a total of 32 samples
@@ -178,21 +178,25 @@ for voltage_trace_data_folder_i=1:length(voltage_trace_data_folders) % for each 
         timestamps_usec=round(get_timestamps_for_Nlg_voltage_samples(sample_indices_of_peaks,indices_of_first_samples,timestamps_of_first_samples_usec,sampling_period_usec)); % the time stamps of all the spike peaks, rounded to integer microseconds; note that these are the time stamps of the last channel on this electrode bundle, which differ from the time stamps on the other channels of this electrode bundle by a few sampling periods of the Nlg AD converter
         for spike_i=1:num_spikes
             channel_indices_for_current_bundle=active_channels_on_current_bundle-(electrode_bundle_i-1)*channels_per_electrode_bundle; % eg. converting channels 5, 6, 7, and 8 (the four electrodes on tetrode 2) into indices 1, 2, 3, and 4
-            spike_waveforms(:,channel_indices_for_current_bundle,spike_i)=round(filtered_voltage_traces(:,sample_indices_of_peaks(spike_i)+spike_extraction_window_length(1):sample_indices_of_peaks(spike_i)+spike_extraction_window_length(2))).'; % save the waveforms of the current spike from all active channels, rounding to integer uV
+            spike_waveforms(:,channel_indices_for_current_bundle,spike_i)=filtered_voltage_traces(:,sample_indices_of_peaks(spike_i)+spike_extraction_window_length(1):sample_indices_of_peaks(spike_i)+spike_extraction_window_length(2)).'; % save the waveforms of the current spike from all active channels (units are uV)
         end
         
         %%
         % Comparison of the waveforms of detected spikes with a library of
         % accepted waveforms; adapted from Michael Yartsev
-        if compare_detected_waveforms_with_library
-            disp(['Comparing detected spike waveforms from ' lower(bundle_name) ' ' num2str(electrode_bundle_i) ' with waveform library...'])
+        if compare_detected_waveforms_with_library_or_typical_waveforms
             load(waveform_library_file) % this contains the variable "library_of_acceptable_spike_shapes" which is 183 rows (the different waveforms) by 32 columns (the 32 voltage samples of each waveforms); the waveforms are all peak-normalized
             logical_indices_of_accepted_spikes=false(size(spike_waveforms,3),1); % a given element of this variable will be 1 (or 0) if the corresponding spike will be accepted (or rejected)
+            disp(['Comparing detected spike waveforms from ' lower(bundle_name) ' ' num2str(electrode_bundle_i) ' with waveforms from library...'])
             for spike_i=1:size(spike_waveforms,3)
                 [~,channel_with_highest_peak]=max(max(spike_waveforms(:,:,spike_i),[],1)); % find the channel with the highest peak
                 waveform_to_test=spike_waveforms(:,channel_with_highest_peak,spike_i);
-                max_correlation_with_library=max([corr(waveform_to_test(2:end-1),library_of_acceptable_spike_shapes(:,2:end-1).') corr(waveform_to_test(2:end-1),library_of_acceptable_spike_shapes(:,1:end-2).') corr(waveform_to_test(2:end-1),library_of_acceptable_spike_shapes(:,3:end).')]); % for each detected spike, Michael calculates correlations after shifting the waveforms in the library by -1, 0, and 1 samples, and look for the maximum correlation
-                logical_indices_of_accepted_spikes(spike_i)=max_correlation_with_library>=lowest_acceptable_correlation;
+                if compare_detected_waveforms_with_library_or_typical_waveforms==1
+                    max_correlation=max([corr(waveform_to_test(2:end-1),library_of_acceptable_spike_shapes(:,2:end-1).') corr(waveform_to_test(2:end-1),library_of_acceptable_spike_shapes(:,1:end-2).') corr(waveform_to_test(2:end-1),library_of_acceptable_spike_shapes(:,3:end).')]); % for each detected spike, Michael calculates correlations after shifting the waveforms in the library by -1, 0, and 1 samples, and look for the maximum correlation
+                elseif compare_detected_waveforms_with_library_or_typical_waveforms==2
+                    max_correlation=max(corr(waveform_to_test,library_of_acceptable_spike_shapes([15 176],:).')); % the 15th and 176th waveforms in the library are typical broad and narrow spikes, respectively; almost all other waveforms in the library have at least 0.95 correlation with at least one of these two waveforms
+                end
+                logical_indices_of_accepted_spikes(spike_i)=max_correlation>=lowest_acceptable_correlation;
             end
             spike_waveforms=spike_waveforms(:,:,logical_indices_of_accepted_spikes);
             timestamps_usec=timestamps_usec(logical_indices_of_accepted_spikes);
@@ -209,9 +213,9 @@ for voltage_trace_data_folder_i=1:length(voltage_trace_data_folders) % for each 
     % (ie. within a coincidence time window), it's possible that that's an
     % artifact; here we check for and reject all such spikes; adapted from
     % Michael Yartsev
-    % Note: currently, this code does not rigorously deal with cases when
-    % more than 1 spike occurs within the coincidence time window on the
-    % SAME electrode bundle, which should be uncommon
+    % Note: currently, this code does not rigorously deal with uncommon
+    % cases when more than 1 spike occurs within the coincidence time
+    % window on the SAME electrode bundle
     if check_spike_coincidence_across_electrode_bundles
         disp(['Checking for spikes detected at the same time on all ' lower(bundle_name) 's...'])
         indices_active_bundles=find(~isnan(num_spikes_all_electrode_bundles)).'; % indices of the active electrode bundles (tetrodes)
@@ -260,8 +264,17 @@ for voltage_trace_data_folder_i=1:length(voltage_trace_data_folders) % for each 
             ExportModeVector=[]; % don't need this when exporting all spikes
             FieldSelectionFlags=[1 0 1 0 1 1]; % whether or not to export: time stamps, spike channel numbers, the clusters that spikes are assigned to, spike features, spike waveforms, and header
             cluster_numbers=zeros(1,length(timestamps_usec_all_electrode_bundles{electrode_bundle_i})); % zero means that the corresponding spike is not assigned to any cluster; we have to do this because Mat2NlxSpike 6.0.0 has a bug: if this input is omitted, all spikes are incorrectly assigned to clusters
-            NTT_header={'######## Neuralynx Data File Header';'-ADMaxValue 500';'-ADBitVolts 1.0 1.0 1.0 1.0'}; % "-ADMaxValue 500" ensures that when "shift + right click" to preview waveforms in SpikeSort3D, the voltage axis has reasonable scales
-            Mat2NlxSpike(file_name_to_save,AppendToFileFlag,ExportMode,ExportModeVector,FieldSelectionFlags,timestamps_usec_all_electrode_bundles{electrode_bundle_i},cluster_numbers,spike_waveforms_all_electrode_bundles{electrode_bundle_i},NTT_header)
+            
+            % To pan the 2D view in SpikeSort3D, "-ADMaxValue 32767" must
+            % be in the header; to ensure that the voltage axis has
+            % reasonable scales when using "shift + right click" to preview
+            % waveforms in SpikeSort3D, we have to scale the waveforms up
+            % as follows
+            ADBitVolts=500/(32767*10^6); % 32767 is the largest number that can be represented as a signed 16-bit integer, which SpikeSort3D requires to be mapped to the upper bound of the voltage data, which we have picked to be 500 uV here, so that the voltage axis during preview has reasonable scales
+            waveforms_to_export_AD_counts=round(spike_waveforms_all_electrode_bundles{electrode_bundle_i}/(ADBitVolts*10^6)); % the AD counts here, multiplied by the "ADBitVolts" factor above, equals voltages in V
+            NTT_header={'######## Neuralynx Data File Header';'-ADMaxValue 32767';['-ADBitVolts ' sprintf('%.24f',ADBitVolts) ' ' sprintf('%.24f',ADBitVolts) ' ' sprintf('%.24f',ADBitVolts) ' ' sprintf('%.24f',ADBitVolts)]}; % the string repetitions of "ADBitVolts" are for the different channels; the number is saved into the header with 24 digits after the decimal point, as the Neuralynx recording system does; note that this does no round to the 24th digit after the decimal point, which is OK when "ADBitVolts" is 500/(32767*10^6), but needs to be checked if a different voltage upper bound is used
+            
+            Mat2NlxSpike(file_name_to_save,AppendToFileFlag,ExportMode,ExportModeVector,FieldSelectionFlags,timestamps_usec_all_electrode_bundles{electrode_bundle_i},cluster_numbers,waveforms_to_export_AD_counts,NTT_header)
             % Note that if the time stamp and waveform inputs to Mat2NlxSpike
             % (6.0.0) are in certain integer formats, Mat2NlxSpike cannot correctly
             % save them, even though the .NTT file saves the waveforms and time
@@ -289,7 +302,7 @@ for voltage_trace_data_folder_i=1:length(voltage_trace_data_folders) % for each 
         variables_to_save.channels_per_electrode_bundle=channels_per_electrode_bundle;
         variables_to_save.spike_thresholds_all_channels=spike_thresholds_all_channels;
         variables_to_save.absolute_or_threshold_normalized_peak_heights=absolute_or_threshold_normalized_peak_heights;
-        variables_to_save.compare_detected_waveforms_with_library=compare_detected_waveforms_with_library;
+        variables_to_save.compare_detected_waveforms_with_library=compare_detected_waveforms_with_library_or_typical_waveforms;
         variables_to_save.waveform_library_file=waveform_library_file;
         variables_to_save.lowest_acceptable_correlation=lowest_acceptable_correlation;
         variables_to_save.check_spike_coincidence_across_electrode_bundles=check_spike_coincidence_across_electrode_bundles;

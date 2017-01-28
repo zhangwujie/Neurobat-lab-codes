@@ -13,11 +13,11 @@
 % -Before running, need to convert the Neurologger .NLE event file to .xlsx
 % format
 % 7/2/2016, Wujie Zhang
-last_code_update='9/6/2016, Wujie Zhang'; % identifies the version of the code
+last_code_update='1/28/2017, Wujie Zhang'; % identifies the version of the code
 %%
 % Input and ouput paths, options, and paramters
-Nlg_folders={'F:\Wujie\Data\bat selection recording 1\20161018 cf\nlgformat\'}; % each cell is a folder where Nlg voltage data files and event file are stored
-output_folders_for_each_Nlg_folder={'F:\Wujie\Data\bat selection recording 1\20161018 cf\neural\'}; % each cell is a folder where the outputs of the code (voltage and event data in MATLAB or Nlx formats) will be saved, corresponding to one of the folders in Nlg_folders
+Nlg_folders={'F:\Wujie\Data\Tests\call detection test, 20170126\nlgformat\'}; % each cell is a folder where Nlg voltage data files and event file are stored
+output_folders_for_each_Nlg_folder={'F:\Wujie\Data\Tests\call detection test, 20170126\neural\'}; % each cell is a folder where the outputs of the code (voltage and event data in MATLAB or Nlx formats) will be saved, corresponding to one of the folders in Nlg_folders
 
 inactive_channels_for_each_Nlg_folder={[2:16]}; % each cell is a vector containing numbers between 1 and the number of channels, indicating the disabled channels; enter an empty vector if all channels are active; each cell corresponds to one of the folders in Nlg_folders
 reference_channel_for_each_Nlg_folder={[]}; % each cell is a number between 1 and the number of channels, indicating a reference channel whose AD counts (equivalently, voltages) will be subtracted from those of all other channels during the processing here; enter an empty vector to not subtract any reference channel here; each cell corresponds to one of the folders in Nlg_folders
@@ -64,7 +64,7 @@ for Nlg_folder_i=1:length(Nlg_folders) % for each of the Nlg folders
     reference_channel=reference_channel_for_each_Nlg_folder{Nlg_folder_i};
     disp(['Processing the Nlg data in "' Nlg_folder '"...'])
     if save_event_file || save_voltage_AD_count_files || save_options_parameters_CD_figure % if we're saving anything
-        if ~exist(output_folder,'dir'); % make the output folder if it doesn't already exist
+        if ~exist(output_folder,'dir') % make the output folder if it doesn't already exist
             mkdir(output_folder);
         end
     end
@@ -342,8 +342,8 @@ for Nlg_folder_i=1:length(Nlg_folders) % for each of the Nlg folders
             
             file_start_timestamps_usec_from_sampling_period=file_start_timestamps_usec(first_file_after_recording_start)+samples_per_channel_per_file*(Nlg_file_i-first_file_after_recording_start)*sampling_period_sec*1e6; % time stamp of the first sample of the current .DAT file = the number of samples since recording start * sampling period
             file_start_timestamp_discrepancies_ms(Nlg_file_i)=round(file_start_timestamps_usec(Nlg_file_i)/1000)-round(file_start_timestamps_usec_from_sampling_period/1000); % difference between the event log time stamp and the time stamp calculated by counting samples, after roundig both to integer ms
-            if abs(file_start_timestamp_discrepancies_ms(Nlg_file_i))>0
-                disp(['File start time stamp read from event log and that calculated by samples differ by ' num2str(abs(file_start_timestamp_discrepancies_ms(Nlg_file_i))) ' ms...']) % occasional differences of 1 ms might be OK, because they could result from the millisecond resolution of the first time stamp after recording start
+            if abs(file_start_timestamp_discrepancies_ms(Nlg_file_i))>1 % differences of 1 ms might be OK, because they could result from the millisecond resolution of the first time stamp after recording start
+                disp(['File start time stamp read from event log and that calculated by samples differ by ' num2str(abs(file_start_timestamp_discrepancies_ms(Nlg_file_i))) ' ms...'])
             end
             if timestamps_from_eventlog_or_sampling_period==1 || Nlg_file_i==first_file_after_recording_start % take the time stamp of the first sample of a .DAT file from the event log if the user specifies so, or if the current file is the first file after starting recording
                 current_file_start_timestamps_usec=file_start_timestamps_usec(Nlg_file_i)+(0:ADC_sampling_period_usec:(num_channels-1)*ADC_sampling_period_usec); % time stamps of first sample of each of the channels; Jacob Vecht confirmed that the first sample of a file occurs at the file start time, unlike what was implied in the Neurologger manual (version 03-Apr-15 16:10:00)
@@ -406,6 +406,11 @@ for Nlg_folder_i=1:length(Nlg_folders) % for each of the Nlg folders
                 variables_to_save.AD_count_to_uV_factor=AD_count_to_uV_factor;
                 save(file_name_to_save,'-struct','variables_to_save')
             end
+        end
+        
+        disp(['File start time stamp read from event log and that calculated by samples differ by 1 ms for ' num2str(sum(abs(file_start_timestamp_discrepancies_ms)==1)) ' files...'])
+        if sum(abs(file_start_timestamp_discrepancies_ms)>1)>1
+            disp(['File start time stamp read from event log and that calculated by samples differ by more than 1 ms for ' num2str(sum(abs(file_start_timestamp_discrepancies_ms)>1)) ' files...'])
         end
         disp(['Data from ' num2str(num_Nlg_files-length(indices_missing_Nlg_files)) ' out of ' num2str(num_Nlg_files) ' Nlg .DAT files in "' Nlg_folder '" were processed and saved.'])
     end

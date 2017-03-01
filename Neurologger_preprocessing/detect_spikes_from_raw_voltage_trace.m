@@ -2,15 +2,14 @@
 % extract_Nlg_data.m), detect and extract potential spikes, and save as
 % Neuralynx .ntt files for spike sorting in SpikeSort3D.
 % 7/9/2016, Wujie Zhang
-last_code_update='11/30/2016, Wujie Zhang'; % identifies the version of the code
+last_code_update='2/28/2017, Wujie Zhang'; % identifies the version of the code
 %%
 % Input and ouput paths, options, and paramters
-voltage_trace_data_folders={'F:\Wujie\Data\Maimon data\yr2016_bat60091_garfunkle_Nlg\neurologger_recording20160322\neural\nlg1\'}; % each cell is a folder where voltage traces are saved (as AD counts in .mat files as outputs of extract_Nlg_data.m)
-output_folders={'F:\Wujie\Data\Maimon data\yr2016_bat60091_garfunkle_Nlg\neurologger_recording20160322\neural\nlg1\'}; % each cell is a folder where the outputs of the code (time stamps and waveforms of potential spikes, in the Nlx .ntt format) will be saved, corresponding to one of the folders in voltage_trace_data_folders
-output_spike_file_name_prefixes={''}; % the output file names will be a prefix followed by "TT#.ntt" where "#" is the tetrode number; can leave as an empty string; each cell here contains the prefix for one of the folders in output_folders
+voltage_trace_data_folders={'F:\Wujie\Data\two bat recording 1\20170227\playback\bat59813_YL\neural\' 'F:\Wujie\Data\two bat recording 1\20170227\playback\bat60141_TC\neural\' 'F:\Wujie\Data\two bat recording 1\20170228\communication\bat59813_YL\neural\' 'F:\Wujie\Data\two bat recording 1\20170228\communication\bat60141_TC\neural\' 'F:\Wujie\Data\two bat recording 1\20170228\playback\bat59813_YL\neural\' 'F:\Wujie\Data\two bat recording 1\20170228\playback\bat60141_TC\neural\' 'F:\Wujie\Data\two bat recording 1\20170228\communication 59813 60192\bat59813_YL\neural\'}; % each cell is a folder where voltage traces are saved (as AD counts in .mat files as outputs of extract_Nlg_data.m)
+output_folders={'F:\Wujie\Data\two bat recording 1\20170227\playback\bat59813_YL\neural\' 'F:\Wujie\Data\two bat recording 1\20170227\playback\bat60141_TC\neural\' 'F:\Wujie\Data\two bat recording 1\20170228\communication\bat59813_YL\neural\' 'F:\Wujie\Data\two bat recording 1\20170228\communication\bat60141_TC\neural\' 'F:\Wujie\Data\two bat recording 1\20170228\playback\bat59813_YL\neural\' 'F:\Wujie\Data\two bat recording 1\20170228\playback\bat60141_TC\neural\' 'F:\Wujie\Data\two bat recording 1\20170228\communication 59813 60192\bat59813_YL\neural\'}; % each cell is a folder where the outputs of the code (time stamps and waveforms of potential spikes, in the Nlx .ntt format) will be saved, corresponding to one of the folders in voltage_trace_data_folders
 
 save_options_and_parameters=1; % 0: don't save options and paramters in a .mat file ; 1: save
-
+output_spike_file_name_prefix=''; % the output file names will be a prefix followed by "TT#.ntt" where "#" is the tetrode number; can leave as an empty string
 filter_cutoff_frequencies=[600 6000]; % the lower and upper cut-off frequencies in Hz; the raw voltage traces will be band-pass filtered to retain only the frequency components relevant for spike detection and sorting
 
 % Potential spikes are detected as the filtered voltage trace crosses above a threshold
@@ -40,7 +39,6 @@ channels_per_electrode_bundle=4; % the number of channels per electrode bundle, 
 for voltage_trace_data_folder_i=1:length(voltage_trace_data_folders) % for each of the voltage trace folders
     voltage_trace_data_folder=voltage_trace_data_folders{voltage_trace_data_folder_i};
     output_folder=output_folders{voltage_trace_data_folder_i};
-    output_spike_file_name_prefix=output_spike_file_name_prefixes{voltage_trace_data_folder_i};
     disp(['Processing the data in "' voltage_trace_data_folder '"...'])
     %%
     num_electrode_bundle=num_channels/channels_per_electrode_bundle; % number of electrode bundles, eg. tetrodes
@@ -59,7 +57,7 @@ for voltage_trace_data_folder_i=1:length(voltage_trace_data_folders) % for each 
     end
     
     first_file_loaded=1;
-    if ~exist(output_folder,'dir'); % make the output folder if it doesn't already exist
+    if ~exist(output_folder,'dir') % make the output folder if it doesn't already exist
         mkdir(output_folder);
     end
     spike_thresholds_all_channels=nan(channels_per_electrode_bundle*num_electrode_bundle,1);

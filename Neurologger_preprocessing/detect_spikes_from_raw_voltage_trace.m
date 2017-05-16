@@ -2,11 +2,11 @@
 % extract_Nlg_data.m), detect and extract potential spikes, and save as
 % Neuralynx .ntt files for spike sorting in SpikeSort3D.
 % 7/9/2016, Wujie Zhang
-last_code_update='2/28/2017, Wujie Zhang'; % identifies the version of the code
+last_code_update='5/16/2017, Wujie Zhang'; % identifies the version of the code
 %%
 % Input and ouput paths, options, and paramters
-voltage_trace_data_folders={'F:\Wujie\Data\two bat recording 1\20170227\playback\bat59813_YL\neural\' 'F:\Wujie\Data\two bat recording 1\20170227\playback\bat60141_TC\neural\' 'F:\Wujie\Data\two bat recording 1\20170228\communication\bat59813_YL\neural\' 'F:\Wujie\Data\two bat recording 1\20170228\communication\bat60141_TC\neural\' 'F:\Wujie\Data\two bat recording 1\20170228\playback\bat59813_YL\neural\' 'F:\Wujie\Data\two bat recording 1\20170228\playback\bat60141_TC\neural\' 'F:\Wujie\Data\two bat recording 1\20170228\communication 59813 60192\bat59813_YL\neural\'}; % each cell is a folder where voltage traces are saved (as AD counts in .mat files as outputs of extract_Nlg_data.m)
-output_folders={'F:\Wujie\Data\two bat recording 1\20170227\playback\bat59813_YL\neural\' 'F:\Wujie\Data\two bat recording 1\20170227\playback\bat60141_TC\neural\' 'F:\Wujie\Data\two bat recording 1\20170228\communication\bat59813_YL\neural\' 'F:\Wujie\Data\two bat recording 1\20170228\communication\bat60141_TC\neural\' 'F:\Wujie\Data\two bat recording 1\20170228\playback\bat59813_YL\neural\' 'F:\Wujie\Data\two bat recording 1\20170228\playback\bat60141_TC\neural\' 'F:\Wujie\Data\two bat recording 1\20170228\communication 59813 60192\bat59813_YL\neural\'}; % each cell is a folder where the outputs of the code (time stamps and waveforms of potential spikes, in the Nlx .ntt format) will be saved, corresponding to one of the folders in voltage_trace_data_folders
+voltage_trace_data_folders={'H:\Wujie\Data\two bat recording 1\20170304\communication\bat59813_YL\neural\' 'H:\Wujie\Data\two bat recording 1\20170304\communication\bat60141_TC\neural\'}; % each cell is a folder where voltage traces are saved (as AD counts in .mat files as outputs of extract_Nlg_data.m)
+output_folders=voltage_trace_data_folders; % each cell is a folder where the outputs of the code (time stamps and waveforms of potential spikes, in the Nlx .ntt format) will be saved, corresponding to one of the folders in voltage_trace_data_folders
 
 save_options_and_parameters=1; % 0: don't save options and paramters in a .mat file ; 1: save
 output_spike_file_name_prefix=''; % the output file names will be a prefix followed by "TT#.ntt" where "#" is the tetrode number; can leave as an empty string
@@ -14,7 +14,7 @@ filter_cutoff_frequencies=[600 6000]; % the lower and upper cut-off frequencies 
 
 % Potential spikes are detected as the filtered voltage trace crosses above a threshold
 manual_or_automatic_spike_threshold=2; % 1: manually set a threshold for all channels; 2: automatically set a threshold as a multiple of the estimated standard deviation of the noise in the voltage trace
-manual_spike_threshold=[60 60 60 60]; % the threshold(s) in uV, if manual_or_automatic_spike_threshold is 1; can either enter one number, which will be used as the threshold for all channels, or a vector with one threshold for each electrode bundle
+manual_spike_threshold=[40 40 40 40]; % the threshold(s) in uV, if manual_or_automatic_spike_threshold is 1; can either enter one number, which will be used as the threshold for all channels, or a vector with one threshold for each electrode bundle
 automatic_spike_threshold_factor=3; % the threshold is this number times the estimated noise standard deviation, if manual_or_automatic_spike_threshold is 2; Rey et al. (2015, Brain Res Bull) recommends 3 to 5
 absolute_or_threshold_normalized_peak_heights=1; % when comparing the heights of voltage peaks on different channels of the same electrode bundle, whether to use 1: the absolute peak heights; or 2: peak heights normalized by the spike thresholds of the respective channels; this only makes a difference if using the automatic thresholds
 plot_voltage_traces_with_threshold=0; % whether or not to plot some of the filtered voltage traces with the spike threshold; note: this will pause the processing and require user input to continue
@@ -27,8 +27,8 @@ lowest_acceptable_correlation=0.5; % for each potential spike, if the highest co
 
 % Check if all electrode bundles (tetrodes) detect spikes at the same
 % times; adapted from Michael Yartsev
-check_spike_coincidence_across_electrode_bundles=0; % 1: if a potential spike appears at the same time across all electode bundles (tetrodes), then delete it because it's likely an artifact; 0: don't do this
-maximum_coincidence_interval_usec=500; % if the maximum difference between the times of spike detection from all electode bundles (tetrodes) is less than or equal to this value, then the spike is deleted on all electode bundles (tetrodes); in microsec
+check_spike_coincidence_across_electrode_bundles=1; % 1: if a potential spike appears at the same time across all electode bundles (tetrodes), then delete it because it's likely an artifact; 0: don't do this
+maximum_coincidence_interval_usec=50; % if the maximum difference between the times of spike detection from all electode bundles (tetrodes) is less than or equal to this value, then the spike is deleted on all electode bundles (tetrodes); in microsec
 
 spike_extraction_window_length=[-7 24]; % the first/second element indicates how many samples before/after the spike peak to extract as the spike waveform; currently (7/20/2016) the Neuralynx .ntt file needs [-7 24] for a total of 32 samples
 min_separation_between_spike_peaks=abs(spike_extraction_window_length(1)); % the sample indices of the peaks of two consecutive spikes must be larger than this number; the peaks can be detected on the same or different channels
@@ -196,6 +196,9 @@ for voltage_trace_data_folder_i=1:length(voltage_trace_data_folders) % for each 
                 end
                 logical_indices_of_accepted_spikes(spike_i)=max_correlation>=lowest_acceptable_correlation;
             end
+            if sum(logical_indices_of_accepted_spikes)<length(timestamps_usec)
+                disp(['Rejected ' num2str(length(timestamps_usec)-sum(logical_indices_of_accepted_spikes)) ' potential spikes after comparison with waveform library...'])
+            end
             spike_waveforms=spike_waveforms(:,:,logical_indices_of_accepted_spikes);
             timestamps_usec=timestamps_usec(logical_indices_of_accepted_spikes);
         end
@@ -217,34 +220,39 @@ for voltage_trace_data_folder_i=1:length(voltage_trace_data_folders) % for each 
     if check_spike_coincidence_across_electrode_bundles
         disp(['Checking for spikes detected at the same time on all ' lower(bundle_name) 's...'])
         indices_active_bundles=find(~isnan(num_spikes_all_electrode_bundles)).'; % indices of the active electrode bundles (tetrodes)
-        [~,index_bundle_with_minimum_num_spikes]=min(num_spikes_all_electrode_bundles); % index of the electrode bundle with the smallest number of spikes; the number of spikes on inactive bundles is NaN, which does not count as smaller than actual numbers here
-        spike_indices_to_delete=zeros(num_electrode_bundle,length(timestamps_usec_all_electrode_bundles{index_bundle_with_minimum_num_spikes})); % each row is an electrode bundle, the number of columns is the maximum number of spikes that can be detected at the same time on all electrode bundles
-        num_detected_coincidences=0;
-        for bundle_spike_i=1:length(timestamps_usec_all_electrode_bundles{index_bundle_with_minimum_num_spikes}) % for each of the spikes from the electrode bundle with the smallest number of spikes
-            go_to_next_spike=0;
-            current_spike_times_to_consider_for_coincidence=nan(num_electrode_bundle,1); % for the current spike that is possibly occuring at the same time on all electrode bundles, this variable will be filled with the spike times on the different electrode bundles
-            current_spike_times_to_consider_for_coincidence(index_bundle_with_minimum_num_spikes)=timestamps_usec_all_electrode_bundles{index_bundle_with_minimum_num_spikes}(bundle_spike_i);
-            current_spike_indices_to_consider_for_coincidence=nan(num_electrode_bundle,1); % the indices within each electrode bundle, of the spikes that are currently being considered as occuring at the same time
-            current_spike_indices_to_consider_for_coincidence(index_bundle_with_minimum_num_spikes)=bundle_spike_i;
-            for electrode_bundle_i=indices_active_bundles(~ismember(indices_active_bundles,index_bundle_with_minimum_num_spikes)) % for each of the other electrode bundles
-                intervals_between_spikes_on_two_bundles=abs(timestamps_usec_all_electrode_bundles{electrode_bundle_i}-current_spike_times_to_consider_for_coincidence(index_bundle_with_minimum_num_spikes)); % the intervals between all the spikes on electrode_bundle_i and the current spike on the electrode bundle with the smallest number of spikes
-                [min_interval,index_closest_spike]=min(intervals_between_spikes_on_two_bundles); % the spike on electrode_bundle_i that is closest
-                if min_interval<=maximum_coincidence_interval_usec
-                    current_spike_times_to_consider_for_coincidence(electrode_bundle_i)=timestamps_usec_all_electrode_bundles{electrode_bundle_i}(index_closest_spike);
-                    current_spike_indices_to_consider_for_coincidence(electrode_bundle_i)=index_closest_spike;
-                else
-                    go_to_next_spike=1;
-                    break
+        if length(indices_active_bundles)>1
+            [~,index_bundle_with_minimum_num_spikes]=min(num_spikes_all_electrode_bundles); % index of the electrode bundle with the smallest number of spikes; the number of spikes on inactive bundles is NaN, which does not count as smaller than actual numbers here
+            spike_indices_to_delete=zeros(num_electrode_bundle,length(timestamps_usec_all_electrode_bundles{index_bundle_with_minimum_num_spikes})); % each row is an electrode bundle, the number of columns is the maximum number of spikes that can be detected at the same time on all electrode bundles
+            num_detected_coincidences=0;
+            for bundle_spike_i=1:length(timestamps_usec_all_electrode_bundles{index_bundle_with_minimum_num_spikes}) % for each of the spikes from the electrode bundle with the smallest number of spikes
+                go_to_next_spike=0;
+                current_spike_times_to_consider_for_coincidence=nan(num_electrode_bundle,1); % for the current spike that is possibly occuring at the same time on all electrode bundles, this variable will be filled with the spike times on the different electrode bundles
+                current_spike_times_to_consider_for_coincidence(index_bundle_with_minimum_num_spikes)=timestamps_usec_all_electrode_bundles{index_bundle_with_minimum_num_spikes}(bundle_spike_i);
+                current_spike_indices_to_consider_for_coincidence=nan(num_electrode_bundle,1); % the indices within each electrode bundle, of the spikes that are currently being considered as occuring at the same time
+                current_spike_indices_to_consider_for_coincidence(index_bundle_with_minimum_num_spikes)=bundle_spike_i;
+                for electrode_bundle_i=indices_active_bundles(~ismember(indices_active_bundles,index_bundle_with_minimum_num_spikes)) % for each of the other electrode bundles
+                    intervals_between_spikes_on_two_bundles=abs(timestamps_usec_all_electrode_bundles{electrode_bundle_i}-current_spike_times_to_consider_for_coincidence(index_bundle_with_minimum_num_spikes)); % the intervals between all the spikes on electrode_bundle_i and the current spike on the electrode bundle with the smallest number of spikes
+                    [min_interval,index_closest_spike]=min(intervals_between_spikes_on_two_bundles); % the spike on electrode_bundle_i that is closest
+                    if min_interval<=maximum_coincidence_interval_usec
+                        current_spike_times_to_consider_for_coincidence(electrode_bundle_i)=timestamps_usec_all_electrode_bundles{electrode_bundle_i}(index_closest_spike);
+                        current_spike_indices_to_consider_for_coincidence(electrode_bundle_i)=index_closest_spike;
+                    else
+                        go_to_next_spike=1;
+                        break
+                    end
+                end
+                if go_to_next_spike==0 && range(current_spike_times_to_consider_for_coincidence)<=maximum_coincidence_interval_usec % check if the spike times on the other electode bundles are all within the coincidence time window; the "range" function disregards NaNs, which would be on inactive electrode bundles
+                    num_detected_coincidences=num_detected_coincidences+1;
+                    spike_indices_to_delete(:,num_detected_coincidences)=current_spike_indices_to_consider_for_coincidence;
                 end
             end
-            if go_to_next_spike==0 && range(current_spike_times_to_consider_for_coincidence)<=maximum_coincidence_interval_usec % check if the spike times on the other electode bundles are all within the coincidence time window; the "range" function disregards NaNs, which would be on inactive electrode bundles
-                num_detected_coincidences=num_detected_coincidences+1;
-                spike_indices_to_delete(:,num_detected_coincidences)=current_spike_indices_to_consider_for_coincidence;
+            for electrode_bundle_i=indices_active_bundles
+                timestamps_usec_all_electrode_bundles{electrode_bundle_i}(spike_indices_to_delete(electrode_bundle_i,1:num_detected_coincidences))=[]; % delete the rejected spikes
+                spike_waveforms_all_electrode_bundles{electrode_bundle_i}(:,:,spike_indices_to_delete(electrode_bundle_i,1:num_detected_coincidences))=[];
             end
-        end
-        for electrode_bundle_i=indices_active_bundles
-            timestamps_usec_all_electrode_bundles{electrode_bundle_i}(spike_indices_to_delete(electrode_bundle_i,1:num_detected_coincidences))=[]; % delete the rejected spikes
-            spike_waveforms_all_electrode_bundles{electrode_bundle_i}(:,:,spike_indices_to_delete(electrode_bundle_i,1:num_detected_coincidences))=[];
+            disp(['Deleted ' num2str(num_detected_coincidences) ' potential spikes that were detected at the same time on all ' lower(bundle_name) 's...'])
+        else
+            disp(['There are less than two ' lower(bundle_name) 's; skipping spike coincidence detection across ' lower(bundle_name) 's...'])
         end
     end
     

@@ -1,6 +1,6 @@
 % Given time points in one of the data streams (video, audio, or neural),
 % find the corresponding time points in the other data streams. Need to
-% have synced the data streams already. 5/17/2017
+% have synced the data streams already. 5/17/2017 Wujie Zhang
 %
 % Inputs:
 % -input_is_which_data: the string 'video', 'audio', or 'neural'

@@ -7,6 +7,7 @@ W_I=0.4; % functional across-brain coupling strength is W_I
 tau_sec=15; % time constant in seconds
 noise_type=1; % 0: no noise; 1: Gaussian white noise with zero mean and standard deviation "Gaussian_noise_std"
 Gaussian_noise_std=0.15;
+behavior_offset=[-0.08 0]; % for one-/two-chambers sessions
 saved_behavior_transition_matrices='Behavior transition matrices.mat';
 saved_inputs='Inputs, mean activity, 20200221.mat';
 simulated_session_length_minute=100;
@@ -81,7 +82,7 @@ for one_or_two_chamber=1:2
         end
         %%
         simulated_behaviors=behaviors_for_each_state{one_or_two_chamber}(:,states_over_time); % bat X time
-        inputs=inputs_for_behaviors(simulated_behaviors);
+        inputs=inputs_for_behaviors(simulated_behaviors)+behavior_offset(one_or_two_chamber);
         deterministic_input=inputs;
         if noise_type==1
             input_noise=randn(size(inputs))*Gaussian_noise_std;
